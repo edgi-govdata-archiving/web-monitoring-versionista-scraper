@@ -41,7 +41,7 @@ For basic info:
 $ scrape-versionista --help
 ```
 
-### Options:
+### Options
 
 - `--email STRING` **Required!** The E-mail address of Versionista Account. You can also use an env var instead: `VERSIONISTA_EMAIL`
 
@@ -53,11 +53,37 @@ $ scrape-versionista --help
 
 - `--format FORMAT` The output format. One of: `csv`, `json`, `json-stream`. [default: `json`]
 
-- `--output FILEPATH` Write output to this file instead of directly to your console.
+- `--output FILEPATH` Write output to this file instead of directly to your console on stdout.
 
 - `--save-content` If set, the raw HTML of each captured version will also be saved. Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
 
 - `--save-diffs` If set, the HTML of diffs between a version and its previous version will also be saved.Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
+
+
+## Examples
+
+ALL the options!
+
+```sh
+$ scrape-versionista --email 'somebody@somewhere.com' --password somepassword --after '2017-02-01' --before '2017-03-01' --format csv --output './scrape/versions.csv' --save-content --save-diffs
+```
+
+Use environment variables for credentials:
+
+```sh
+$ export VERSIONISTA_EMAIL='somebody@somewhere.com'
+$ export VERSIONISTA_PASSWORD=somepassword
+$ scrape-versionista --after '2017-02-01' --before '2017-03-01' --format csv --output './scrape/versions.csv' --save-content --save-diffs
+```
+
+Specifying time as hours ago instead of a date:
+
+```sh
+# Startign 5 hours ago
+$ scrape-versionista --after 5
+# Decimals are accepted, so you can start 30 minutes ago, too
+$ scrape-versionista --after 0.5
+```
 
 
 ## License & Copyright
