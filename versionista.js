@@ -6,7 +6,7 @@ const jsdom = require('jsdom');
 
 const MAX_SOCKETS = 6;
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36';
-const SLEEP_EVERY = 30;
+const SLEEP_EVERY = 40;
 const SLEEP_FOR = 10000;
 
 /**
@@ -230,12 +230,30 @@ class Versionista {
       // result (called "safe" in versionista's API) gets us an actual webpage,
       // but it appears that the source there has been parsed, cleaned up
       // (made valid HTML), and had Versionista analytics inserted.
-      .then(window => window.document.querySelector('pre').textContent);
+      .then(window => {
+        const pre = window.document.querySelector('pre');
+        if (pre) {
+          return pre.textContent;
+        }
+        // Sometimes a version may have no content (e.g. a page was removed)
+        // from a site. This is OK.
+        else if (window.httpResponse.body === '') {
+          return '';
+        }
+        else {
+          const error = new Error(`Can't find raw content for ${versionUrl}`);
+          error.type = 'NO_RAW_CONTENT';
+          error.versionUrl = versionUrl;
+          error.formattedContent = window.httpResponse.body;
+          throw error;
+        }
+      });
   }
 
   /**
-   * Get information about a diff between two versions
-   * (including the diff itself)
+   * Get information about a diff between two versions (including the diff
+   * itself). Note this May return `null` if there is no diff (e.g. if
+   * Versionista got no content/no response when it captured the version).
    * @param {String} diffUrl
    * @param {string} [diffType='only']
    * @returns {Promise<VersionistaDiff>}
@@ -264,17 +282,13 @@ class Versionista {
       .then(apiUrl => this.request({url: apiUrl, parseBody: false}))
       // That API returns a URL for the actual diff content, so fetch that
       .then(response => this.request({url: `${diffHost}${response.body}`, parseBody: false}))
-      // .then(response => ({
-      //   hash: hash(response.body),
-      //   length: response.body.length,
-      //   content: response.body
-      // }));
       .then(response => {
+        // A Version can be empty in cases like 400, 404, etc; this is OK
         if (!response.body) {
-          console.error("UOHHHHH!!!", diffUrl);
+          return null;
         }
         return {
-          hash: hash(response.body),
+          hash: hash(response.body || ''),
           length: response.body.length,
           content: response.body
         }
@@ -297,12 +311,13 @@ function createClient ({userAgent = USER_AGENT, maxSockets = MAX_SOCKETS, sleepE
   let untilSleep = sleepEvery;
   let sleeping = false;
   function sleepIfNecessary () {
-    if (sleepEvery <= 0) return;
+    if (sleeping || sleepEvery <= 0) return;
 
-    if (untilSleep > 1) {
+    if (untilSleep > 0) {
       untilSleep--;
     }
-    else if (untilSleep === 0) {
+
+    if (untilSleep === 0) {
       sleeping = true;
       setTimeout(() => {
         sleeping = false;
