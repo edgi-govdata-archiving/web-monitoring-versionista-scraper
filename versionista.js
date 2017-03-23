@@ -4,8 +4,10 @@ const crypto = require('crypto');
 const request = require('request');
 const jsdom = require('jsdom');
 
-const MAX_SOCKETS = 10;
+const MAX_SOCKETS = 6;
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36';
+const SLEEP_EVERY = 30;
+const SLEEP_FOR = 10000;
 
 /**
  * @typedef {Object} VersionistaSite
@@ -78,31 +80,28 @@ class Versionista {
       options.parseBody = true;
     }
 
-    return new Promise((resolve, reject) => {
-      this.client(options, (error, response, body) => {
-        if (error) {
-          return reject(error);
-        }
-
+    return this.client(options)
+      .then(response => {
         if (options.parseBody) {
-          jsdom.env({
-            html: body,
-            url: options.url,
-            done: (error, window) => {
-              if (error) {
-                return reject(error);
+          return new Promise((resolve, reject) => {
+            jsdom.env({
+              html: response.body,
+              url: options.url,
+              done: (error, window) => {
+                if (error) {
+                  return reject(error);
+                }
+                window.httpResponse = response;
+                window.requestDate = new Date();
+                resolve(window);
               }
-              window.httpResponse = response;
-              window.requestDate = new Date();
-              resolve(window);
-            }
+            });
           });
         }
         else {
-          resolve(response);
+          return response;
         }
       });
-    });
   }
 
   /**
@@ -283,13 +282,69 @@ class Versionista {
   }
 }
 
-function createClient ({userAgent, maxSockets} = {}) {
+function createClient ({userAgent = USER_AGENT, maxSockets = MAX_SOCKETS, sleepEvery = SLEEP_EVERY, sleepFor = SLEEP_FOR} = {}) {
   const cookieJar = request.jar();
-  return request.defaults({
+  const versionistaRequest = request.defaults({
     jar: cookieJar,
-    pool: {maxSockets: maxSockets || MAX_SOCKETS},
-    headers: {'User-Agent': userAgent || USER_AGENT}
+    headers: {'User-Agent': userAgent}
   });
+
+  // Manage simultaneous requests. Request can actually do this natively with
+  // its `pool` feature, but that can result in timeouts when a lot of requests
+  // are queued up (which is likely here). This also lets us enforce short
+  // break periods every few requests.
+
+  let untilSleep = sleepEvery;
+  let sleeping = false;
+  function sleepIfNecessary () {
+    if (sleepEvery <= 0) return;
+
+    if (untilSleep > 1) {
+      untilSleep--;
+    }
+    else if (untilSleep === 0) {
+      sleeping = true;
+      setTimeout(() => {
+        sleeping = false;
+        untilSleep = sleepEvery;
+        doNextRequest();
+      }, sleepFor);
+    }
+  }
+
+  let availableSockets = maxSockets;
+  const queue = [];
+  function doNextRequest () {
+    if (availableSockets <= 0 || sleeping) return;
+
+    const task = queue.shift();
+    if (task) {
+      availableSockets--;
+      versionistaRequest(task.options, (error, response) => {
+        availableSockets++;
+        sleepIfNecessary();
+        process.nextTick(doNextRequest);
+
+        if (error) {
+          task.reject(error);
+        }
+        else {
+          task.resolve(response);
+        }
+      });
+    }
+  }
+
+  return function (options) {
+    return new Promise((resolve, reject) => {
+      queue.push({
+        options: options,
+        resolve,
+        reject
+      });
+      doNextRequest();
+    });
+  };
 }
 
 function parseVersionistaUrl (url) {
