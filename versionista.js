@@ -7,7 +7,8 @@ const jsdom = require('jsdom');
 const MAX_SOCKETS = 6;
 const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36';
 const SLEEP_EVERY = 40;
-const SLEEP_FOR = 10000;
+const SLEEP_FOR = 5000;
+const MAX_RETRIES = 3;
 
 /**
  * @typedef {Object} VersionistaSite
@@ -82,7 +83,12 @@ class Versionista {
 
     return this.client(options)
       .then(response => {
-        if (options.parseBody) {
+        const contentType = response.headers['content-type'] || '';
+        const mightBeHtml = contentType.startsWith('text/html') ||
+          !!response.body.toString().match(/^[\s\n]*</) ||
+          response.body.toString() === '';
+
+        if (options.parseBody && mightBeHtml) {
           return new Promise((resolve, reject) => {
             jsdom.env({
               html: response.body,
@@ -214,10 +220,13 @@ class Versionista {
 
   /**
    * Get the raw content of a given version of an HTML page.
+   * TODO: should return an object indicating type (so we can do correct file
+   * extensions for PDF, mp4, etc.)
    * @param {String} versionUrl
-   * @returns {Promise<String>}
+   * @param {Number} retries Number of times to retry if there's a cache timeout
+   * @returns {Promise<String|Buffer>}
    */
-  getVersionRawContent (versionUrl) {
+  getVersionRawContent (versionUrl, retries = 2) {
     // This is similar to getVersionDiffHtml, but we get to skip a step (yay!)
     // The "api" for this is available directly at versionista.com.
     const apiUrl = versionUrl.replace(
@@ -225,28 +234,46 @@ class Versionista {
       '$1api/ip_url/$2/html');
 
     return this.request({url: apiUrl, parseBody: false})
-      .then(response => this.request(response.body))
+      .then(response => this.request({
+        url: response.body,
+        // The URL from the API is time limited, so prioritize the request
+        immediate: true,
+        // A version may be binary data (for PDFs, videos, etc.)
+        encoding: null
+      }))
       // The raw source is the text of the `<pre>` element. A different type of
       // result (called "safe" in versionista's API) gets us an actual webpage,
       // but it appears that the source there has been parsed, cleaned up
       // (made valid HTML), and had Versionista analytics inserted.
-      .then(window => {
-        const pre = window.document.querySelector('pre');
-        if (pre) {
-          return pre.textContent;
-        }
-        // Sometimes a version may have no content (e.g. a page was removed)
-        // from a site. This is OK.
-        else if (window.httpResponse.body === '') {
+      .then(response => {
+        const actualResponse = response.httpResponse || response;
+        // Sometimes a version may have no content (e.g. a page was removed).
+        // This is OK.
+        if (actualResponse.body.toString() === '') {
           return '';
         }
-        else {
-          const error = new Error(`Can't find raw content for ${versionUrl}`);
-          error.type = 'NO_RAW_CONTENT';
-          error.versionUrl = versionUrl;
-          error.formattedContent = window.httpResponse.body;
-          throw error;
+        // Are we dealing with a DOM?
+        else if (response.document) {
+          const document = response.document;
+          const pre = document.querySelector('pre');
+          if (pre) {
+            return pre.textContent;
+          }
+          // Handle cache timeout (see note on temporary URLs above)
+          else if (document.body.textContent.match(/cache expired/i) && retries) {
+            return this.getVersionRawContent(versionUrl, retries - 1);
+          }
         }
+        else if (Buffer.isBuffer(actualResponse.body)) {
+          return actualResponse.body;
+        }
+
+        // FAILURE!
+        const error = new Error(`Can't find raw content for ${versionUrl}`);
+        error.code = 'VERSIONISTA:NO_VERSION_CONTENT';
+        error.urls = [versionUrl, apiUrl, actualResponse.request.uri.href];
+        error.receivedContent = actualResponse.body;
+        throw error;
       });
   }
 
@@ -279,11 +306,19 @@ class Versionista {
         diffHost = `${actualUri.protocol}//${actualUri.host}`;
         return `${diffHost}/api/ip_url${actualUri.path}${diffType}`;
       })
-      .then(apiUrl => this.request({url: apiUrl, parseBody: false}))
+      .then(apiUrl => this.request({
+        url: apiUrl,
+        parseBody: false,
+        immediate: true
+      }))
       // That API returns a URL for the actual diff content, so fetch that
-      .then(response => this.request({url: `${diffHost}${response.body}`, parseBody: false}))
+      .then(response => this.request({
+        url: `${diffHost}${response.body}`,
+        parseBody: false,
+        immediate: true
+      }))
       .then(response => {
-        // A Version can be empty in cases like 400, 404, etc; this is OK
+        // A diff can be empty in cases where the version was a removed page
         if (!response.body) {
           return null;
         }
@@ -318,13 +353,17 @@ function createClient ({userAgent = USER_AGENT, maxSockets = MAX_SOCKETS, sleepE
     }
 
     if (untilSleep === 0) {
-      sleeping = true;
-      setTimeout(() => {
-        sleeping = false;
-        untilSleep = sleepEvery;
-        doNextRequest();
-      }, sleepFor);
+      sleep();
     }
+  }
+
+  function sleep (time = sleepFor) {
+    sleeping = true;
+    setTimeout(() => {
+      sleeping = false;
+      untilSleep = sleepEvery;
+      doNextRequest();
+    }, time);
   }
 
   let availableSockets = maxSockets;
@@ -338,25 +377,38 @@ function createClient ({userAgent = USER_AGENT, maxSockets = MAX_SOCKETS, sleepE
       versionistaRequest(task.options, (error, response) => {
         availableSockets++;
         sleepIfNecessary();
-        process.nextTick(doNextRequest);
 
         if (error) {
-          task.reject(error);
+          // if the server hung up, take a break and try again
+          if (error.code === 'ECONNRESET' && task.retries < MAX_RETRIES) {
+            task.retries += 1;
+            queue.unshift(task);
+            sleep(sleepFor * task.retries * 2);
+          }
+          else {
+            task.reject(error);
+          }
         }
         else {
           task.resolve(response);
         }
+
+        // NOTE: do this *after* resolving so the resolver has an opportunity
+        // queue an immediate next request first.
+        process.nextTick(doNextRequest);
       });
     }
   }
 
   return function (options) {
     return new Promise((resolve, reject) => {
-      queue.push({
+      const task = {
         options: options,
+        retries: (options.retry === false) ? MAX_RETRIES : 0,
         resolve,
         reject
-      });
+      };
+      queue[options.immediate ? 'unshift' : 'push'](task);
       doNextRequest();
     });
   };

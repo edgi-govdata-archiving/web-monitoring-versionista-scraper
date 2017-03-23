@@ -234,6 +234,7 @@ const formatter = {
 
 const startTime = Date.now();
 
+let encounteredErrors = false;
 scraper.logIn()
   .then(() => scraper.getSites())
   // TODO: rewrite this as a series or more readable sequential transforms
@@ -290,7 +291,21 @@ scraper.logIn()
           if (args['--save-content']) {
             const savedFile = scraper
               .getVersionRawContent(version.url)
-              .then(html => writeFile(outputFileName(version), html));
+              .then(html => writeFile(outputFileName(version), html))
+              .catch(error => {
+                encounteredErrors = true;
+
+                // Do some nice logging for a failure to get content. Also
+                // don't stop the works for this particular error.
+                if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
+                  console.error(error.message);
+                  console.error('  Requested urls:', error.urls);
+                  console.error(`  Raw response: "${error.formattedContent}"`);
+                }
+                else {
+                  throw error;
+                }
+              });
             workTasks.push(savedFile);
           }
         });
@@ -308,10 +323,12 @@ scraper.logIn()
       process.stdout.write(formatted);
     }
   })
+  .catch(error => {
+    console.error(error.stack);
+    encounteredErrors = true;
+  })
   .then(() => {
     const seconds = Math.round((Date.now() - startTime) / 1000);
     console.error(`Completed in ${seconds} seconds`);
-  })
-  .catch(error => {
-    console.error(error.stack);
+    process.exit(encounteredErrors ? 1 : 0);
   });
