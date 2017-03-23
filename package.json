@@ -5,6 +5,9 @@
   "main": "versionista.js",
   "author": "Rob Brackett <rob@robbrackett.com>",
   "license": "GPL-3.0",
+  "bin": {
+    "scrape-versionista": "./bin/scrape-versionista"
+  },
   "dependencies": {
     "fs-promise": "^2.0.0",
     "jsdom": "^9.12.0",
