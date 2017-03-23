@@ -2,8 +2,9 @@
 'use strict';
 
 const path = require('path');
-const fs = require('fs');
+const fs = require('fs-promise');
 const neodoc = require('neodoc');
+const mkdirp = require('mkdirp');
 const Versionista = require('../versionista.js');
 
 const args = neodoc.run(`
@@ -67,6 +68,33 @@ if (args['--after']) {
 // Minimal UUID generation from https://gist.github.com/jed/982883
 function uuid(a){return a?(a^Math.random()*16>>a/4).toString(16):([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,uuid)}
 
+function outputFileName (version, tag = 'content', extension = 'html') {
+  return `${version.siteId}-${version.pageId}-${version.versionId}-${tag}.${extension}`;
+}
+
+let directoryIsReady = false;
+function writeFile (name, content, encoding = 'utf8') {
+  let directory = process.cwd();
+  if (args['--output']) {
+    directory = path.dirname(args['--output']);
+  }
+
+  const filePath = path.join(directory, name);
+  const writeIt = () => fs.writeFile(filePath, content, encoding);
+
+  if (!directoryIsReady) {
+    return new Promise((resolve, reject) => {
+      mkdirp(directory, (error, created) => {
+        if (error) return reject(error);
+        directoryIsReady = true;
+        resolve(created);
+      });
+    }).then(writeIt)
+  }
+
+  return writeIt();
+}
+
 function agencyFromSite (site) {
   return site.name.split('-')[0].trim();
 }
@@ -90,11 +118,18 @@ function formatAsCsv (email, sites) {
     'versionista_account'
   ]];
 
+  if (args['--save-diffs']) {
+    rows[0].push('Diff File');
+  }
+  if (args['--save-content']) {
+    rows[0].push('Version File');
+  }
+
   // TODO: this would be better as a flatmap
   sites.forEach(site => {
     site.pages.forEach(page => {
       page.versions.forEach(version => {
-        rows.push([
+        const row = [
           null,
           uuid(),
           new Date().toISOString(),
@@ -110,9 +145,15 @@ function formatAsCsv (email, sites) {
           version.diff && version.diff.length,
           version.diff && version.diff.hash,
           email
-          // TODO: path to diff if --save-diffs
-          // TODO: path to content if --save-content
-        ]);
+        ];
+        if (args['--save-diffs']) {
+          row.push(outputFileName(version, 'diff'));
+        }
+        if (args['--save-content']) {
+          row.push(outputFileName(version, 'content'));
+        }
+
+        rows.push(row);
       });
     });
   });
@@ -150,14 +191,18 @@ function formatAsJsonStream (email, sites) {
         }, version);
 
         if (formatted.diff) {
-          // TODO: path to diff if --save-diffs
           formatted.diff = {
             length: formatted.diff.length,
             hash: formatted.diff.hash
           };
+          if (args['--save-diffs']) {
+            formatted.diff.diff = outputFileName(version, 'diff');
+          }
         }
 
-        // TODO: path to content if --save-content
+        if (args['--save-content']) {
+          formatted.content = outputFileName(version, 'content');
+        }
 
         rows.push(formatted);
       });
@@ -229,10 +274,35 @@ scraper.logIn()
         });
     }));
   })
+  // save diffs and versions
+  .then(sites => {
+    if (!args['--save-diffs'] && !args['--save-content']) return sites;
+
+    const workTasks = [];
+    sites.forEach(site => {
+      site.pages.forEach(page => {
+        page.versions.forEach(version => {
+          if (args['--save-diffs'] && version.diff) {
+            workTasks.push(writeFile(
+              outputFileName(version, 'diff'),
+              version.diff.content));
+          }
+          if (args['--save-content']) {
+            const savedFile = scraper
+              .getVersionRawContent(version.url)
+              .then(html => writeFile(outputFileName(version), html));
+            workTasks.push(savedFile);
+          }
+        });
+      });
+    });
+    return Promise.all(workTasks).then(() => sites);
+  })
+  // format and save
   .then(data => formatter(args['--email'], data))
   .then(formatted => {
     if (args['--output']) {
-      fs.writeFileSync(args['--output'], formatted, 'utf8');
+      return writeFile(path.basename(args['--output']), formatted);
     }
     else {
       process.stdout.write(formatted);
