@@ -1,0 +1,13 @@
+{
+  "name": "versionista-edgi-node",
+  "version": "0.1.0",
+  "description": "Quick and dirty, but fast, Node.js scraper for Versionista data used by EDGI",
+  "main": "versionista.js",
+  "author": "Rob Brackett <rob@robbrackett.com>",
+  "license": "GPL-3.0",
+  "dependencies": {
+    "jsdom": "^9.12.0",
+    "neodoc": "^1.4.0",
+    "request": "^2.81.0"
+  }
+}

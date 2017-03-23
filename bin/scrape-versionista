@@ -1,0 +1,247 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
+const neodoc = require('neodoc');
+const Versionista = require('../versionista.js');
+
+const args = neodoc.run(`
+Usage: scrape-versionista [options]
+
+Options:
+  -h, --help           Print this lovely help message.
+  --email ADDRESS      E-mail address of Versionista Account.
+                       You can also use an env var instead: VERSIONISTA_EMAIL
+  --password PASSWORD  Password of Versionista Account.
+                       You can also use an env var instead: VERSIONISTA_PASSWORD
+  --after DATE         Only include versions after this date.
+                       An ISO8601 date string like '2017-03-01T00:00:00Z'
+                       Or a number, representing hours before the current time
+  --before DATE        Only include versions created before this time.
+                       An ISO8601 date string like '2017-03-01T00:00:00Z'
+                       Or a number, representing hours before the current time
+  --format FORMAT      Output format (csv|json|json-stream) [default: json]
+  --output PATH        Write output to this file instead of STDOUT.
+  --save-content       Save raw HTML of each version. Files are written to the
+                       working directory or, if --output is specified, the same
+                       directory as the output file.
+  --save-diffs         Save HTML of diffs between versions. Outputs in the same
+                       fashion as --save-content.
+`);
+
+args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
+args['--password'] = args['--password'] || process.env.VERSIONISTA_PASSWORD;
+if (!args['--email'] || !args['--password']) {
+  console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+}
+
+if (args['--before']) {
+  if (typeof args['--before'] === 'number') {
+    const millisAgo = args['--before'] * 60 * 60 * 1000;
+    args['--before'] = new Date(Date.now() - millisAgo);
+  }
+  else {
+    args['--before'] = new Date(args['--before']);
+    if (isNaN(args['--before'])) {
+      console.error('--before must be a valid date or number.');
+      process.exit(1);
+    }
+  }
+}
+
+if (args['--after']) {
+  if (typeof args['--after'] === 'number') {
+    const millisAgo = args['--after'] * 60 * 60 * 1000;
+    args['--after'] = new Date(Date.now() - millisAgo);
+  }
+  else {
+    args['--after'] = new Date(args['--after']);
+    if (isNaN(args['--after'])) {
+      console.error('--after must be a valid date or number.');
+      process.exit(1);
+    }
+  }
+}
+
+// Minimal UUID generation from https://gist.github.com/jed/982883
+function uuid(a){return a?(a^Math.random()*16>>a/4).toString(16):([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,uuid)}
+
+function agencyFromSite (site) {
+  return site.name.split('-')[0].trim();
+}
+
+function formatAsCsv (email, sites) {
+  const rows = [[
+    'Index',
+    'UUID',
+    'Output Date/Time',
+    'Agency',
+    'Site Name',
+    'Page name',
+    'URL',
+    'Page View URL',
+    'Last Two - Side by Side',
+    'Latest to Base - Side by Side',
+    'Date Found - Latest',
+    'Date Found - Base',
+    'Diff Length',
+    'Diff Hash',
+    'versionista_account'
+  ]];
+
+  // TODO: this would be better as a flatmap
+  sites.forEach(site => {
+    site.pages.forEach(page => {
+      page.versions.forEach(version => {
+        rows.push([
+          null,
+          uuid(),
+          new Date().toISOString(),
+          agencyFromSite(site),
+          site.name,
+          page.title,
+          page.url,
+          page.versionistaUrl,
+          version.diffWithPreviousUrl,
+          version.diffWithFirstUrl,
+          version.diffWithPreviousDate,
+          version.diffWithFirstDate,
+          version.diff && version.diff.length,
+          version.diff && version.diff.hash,
+          email
+          // TODO: path to diff if --save-diffs
+          // TODO: path to content if --save-content
+        ]);
+      });
+    });
+  });
+
+  // CSV-ify
+  return rows
+    .map(row => {
+      return row
+        .map(cell => {
+          let result = '';
+          if (cell != null) {
+            result = cell.toString();
+          }
+          if (result.indexOf(',') > -1) {
+            result = `"${result}"`;
+          }
+          return result;
+        })
+        .join(',');
+    })
+    .join('\n');
+}
+
+function formatAsJsonStream (email, sites) {
+  const rows = [];
+
+  // TODO: this would be better as a flatmap
+  sites.forEach(site => {
+    site.pages.forEach(page => {
+      page.versions.forEach(version => {
+        const formatted = Object.assign({
+          account: email,
+          siteName: site.name,
+          versionistaSiteUrl: site.url
+        }, version);
+
+        if (formatted.diff) {
+          // TODO: path to diff if --save-diffs
+          formatted.diff = {
+            length: formatted.diff.length,
+            hash: formatted.diff.hash
+          };
+        }
+
+        // TODO: path to content if --save-content
+
+        rows.push(formatted);
+      });
+    });
+  });
+
+  return rows.map(row => JSON.stringify(row)).join('\n');
+}
+
+function formatAsJson (email, sites) {
+  const formatted = sites.map(site => Object.assign({account: email}, site));
+  return JSON.stringify(formatted);
+}
+
+const scraper = new Versionista({
+  email: args['--email'],
+  password: args['--password']
+});
+
+const dateFilter = (testDate) => {
+  return (!args['--after'] || args['--after'] <= testDate) &&
+    (!args['--before'] || args['--before'] >= testDate);
+}
+
+const formatter = {
+  csv: formatAsCsv,
+  'json-stream': formatAsJsonStream
+}[args['--format']] || formatAsJson;
+
+const startTime = Date.now();
+
+scraper.logIn()
+  .then(() => scraper.getSites())
+  // TODO: rewrite this as a series or more readable sequential transforms
+  // instead of nested ones.
+  .then(siteData => {
+    const updatedSites = siteData.filter(site => dateFilter(site.lastChange));
+    let totalSites = updatedSites.length;
+    let completedSites = 0;
+    console.error(`Found ${totalSites} (of ${siteData.length}) sites with updates.`);
+
+    return Promise.all(updatedSites.map(site => {
+      return scraper.getPages(site.url)
+        .then(pages => {
+          completedSites++;
+          const updatedPages = pages.filter(page => dateFilter(page.lastChange));
+          console.error(`Found ${pages.length} pages (${updatedPages.length} w/ updates) for ${site.name} (${completedSites}/${totalSites} sites checked)`);
+
+          return Promise.all(updatedPages.map(page => {
+            return scraper.getVersions(page.versionistaUrl)
+              .then(versions => {
+                const newVersions = versions.filter(version => dateFilter(version.date));
+                console.error(`In ${page.url}:\n  ${versions.length} versions\n  ${newVersions.length} new versions`);
+
+                return Promise.all(newVersions.map(version => {
+                  if (!version.diffWithPreviousUrl) return version;
+                  return scraper.getVersionDiff(version.diffWithPreviousUrl)
+                    .then(diff => {
+                      version.diff = diff;
+                      return version;
+                    });
+                }))
+                  // attach versions to pages
+                  .then(versions => Object.assign({versions}, page));
+              });
+          }))
+            // attach pages to site
+            .then(pages => Object.assign({pages}, site));
+        });
+    }));
+  })
+  .then(data => formatter(args['--email'], data))
+  .then(formatted => {
+    if (args['--output']) {
+      fs.writeFileSync(args['--output'], formatted, 'utf8');
+    }
+    else {
+      process.stdout.write(formatted);
+    }
+  })
+  .then(() => {
+    const seconds = Math.round((Date.now() - startTime) / 1000);
+    console.error(`Completed in ${seconds} seconds`);
+  })
+  .catch(error => {
+    console.error(error.stack);
+  });
