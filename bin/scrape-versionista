@@ -5,7 +5,13 @@ const path = require('path');
 const fs = require('fs-promise');
 const neodoc = require('neodoc');
 const mkdirp = require('mkdirp');
-const Versionista = require('../versionista.js');
+const Versionista = require('..');
+
+const formatters = {
+  csv: require('../lib/formatters/csv.js'),
+  'json-stream': require('../lib/formatters/json-stream.js'),
+  json: require('../lib/formatters/json.js'),
+};
 
 const args = neodoc.run(`
 Usage: scrape-versionista [options]
@@ -65,9 +71,6 @@ if (args['--after']) {
   }
 }
 
-// Minimal UUID generation from https://gist.github.com/jed/982883
-function uuid(a){return a?(a^Math.random()*16>>a/4).toString(16):([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g,uuid)}
-
 function outputFileName (version, tag = 'content', extension = 'html') {
   return `${version.siteId}-${version.pageId}-${version.versionId}-${tag}.${extension}`;
 }
@@ -95,128 +98,6 @@ function writeFile (name, content, encoding = 'utf8') {
   return writeIt();
 }
 
-function agencyFromSite (site) {
-  return site.name.split('-')[0].trim();
-}
-
-function formatAsCsv (email, sites) {
-  const rows = [[
-    'Index',
-    'UUID',
-    'Output Date/Time',
-    'Agency',
-    'Site Name',
-    'Page name',
-    'URL',
-    'Page View URL',
-    'Last Two - Side by Side',
-    'Latest to Base - Side by Side',
-    'Date Found - Latest',
-    'Date Found - Base',
-    'Diff Length',
-    'Diff Hash',
-    'versionista_account'
-  ]];
-
-  if (args['--save-diffs']) {
-    rows[0].push('Diff File');
-  }
-  if (args['--save-content']) {
-    rows[0].push('Version File');
-  }
-
-  // TODO: this would be better as a flatmap
-  sites.forEach(site => {
-    site.pages.forEach(page => {
-      page.versions.forEach(version => {
-        const row = [
-          null,
-          uuid(),
-          new Date().toISOString(),
-          agencyFromSite(site),
-          site.name,
-          page.title,
-          page.url,
-          page.versionistaUrl,
-          version.diffWithPreviousUrl,
-          version.diffWithFirstUrl,
-          version.diffWithPreviousDate,
-          version.diffWithFirstDate,
-          version.diff && version.diff.length,
-          version.diff && version.diff.hash,
-          email
-        ];
-        if (args['--save-diffs']) {
-          row.push(outputFileName(version, 'diff'));
-        }
-        if (args['--save-content']) {
-          row.push(outputFileName(version, 'content'));
-        }
-
-        rows.push(row);
-      });
-    });
-  });
-
-  // CSV-ify
-  return rows
-    .map(row => {
-      return row
-        .map(cell => {
-          let result = '';
-          if (cell != null) {
-            result = cell.toString();
-          }
-          if (result.indexOf(',') > -1) {
-            result = `"${result}"`;
-          }
-          return result;
-        })
-        .join(',');
-    })
-    .join('\n');
-}
-
-function formatAsJsonStream (email, sites) {
-  const rows = [];
-
-  // TODO: this would be better as a flatmap
-  sites.forEach(site => {
-    site.pages.forEach(page => {
-      page.versions.forEach(version => {
-        const formatted = Object.assign({
-          account: email,
-          siteName: site.name,
-          versionistaSiteUrl: site.url
-        }, version);
-
-        if (formatted.diff) {
-          formatted.diff = {
-            length: formatted.diff.length,
-            hash: formatted.diff.hash
-          };
-          if (args['--save-diffs']) {
-            formatted.diff.diff = outputFileName(version, 'diff');
-          }
-        }
-
-        if (args['--save-content']) {
-          formatted.content = outputFileName(version, 'content');
-        }
-
-        rows.push(formatted);
-      });
-    });
-  });
-
-  return rows.map(row => JSON.stringify(row)).join('\n');
-}
-
-function formatAsJson (email, sites) {
-  const formatted = sites.map(site => Object.assign({account: email}, site));
-  return JSON.stringify(formatted);
-}
-
 const scraper = new Versionista({
   email: args['--email'],
   password: args['--password']
@@ -227,11 +108,7 @@ const dateFilter = (testDate) => {
     (!args['--before'] || args['--before'] >= testDate);
 }
 
-const formatter = {
-  csv: formatAsCsv,
-  'json-stream': formatAsJsonStream
-}[args['--format']] || formatAsJson;
-
+const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
 let encounteredErrors = false;
@@ -314,7 +191,12 @@ scraper.logIn()
     return Promise.all(workTasks).then(() => sites);
   })
   // format and save
-  .then(data => formatter(args['--email'], data))
+  .then(data => formatter(data, {
+    email: args['--email'],
+    includeDiffs: args['--save-diffs'],
+    includeContent: args['--save-content'],
+    outputFileName: outputFileName
+  }))
   .then(formatted => {
     if (args['--output']) {
       return writeFile(path.basename(args['--output']), formatted);

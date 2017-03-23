@@ -2,7 +2,7 @@
   "name": "versionista-edgi-node",
   "version": "0.1.0",
   "description": "Quick and dirty, but fast, Node.js scraper for Versionista data used by EDGI",
-  "main": "versionista.js",
+  "main": "lib/versionista.js",
   "author": "Rob Brackett <rob@robbrackett.com>",
   "license": "GPL-3.0",
   "bin": {
