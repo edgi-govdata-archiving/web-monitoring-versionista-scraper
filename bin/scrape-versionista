@@ -103,8 +103,12 @@ const scraper = new Versionista({
   password: args['--password']
 });
 
-const dateFilter = (testDate) => {
-  return (!args['--after'] || args['--after'] <= testDate) &&
+const isAfterMinimumDate = (testDate) => {
+  return !args['--after'] || args['--after'] <= testDate;
+};
+
+const isInRequestedDateRange = (testDate) => {
+  return isAfterMinimumDate(testDate) &&
     (!args['--before'] || args['--before'] >= testDate);
 }
 
@@ -117,7 +121,7 @@ scraper.logIn()
   // TODO: rewrite this as a series or more readable sequential transforms
   // instead of nested ones.
   .then(siteData => {
-    const updatedSites = siteData.filter(site => dateFilter(site.lastChange));
+    const updatedSites = siteData.filter(site => isAfterMinimumDate(site.lastChange));
     let totalSites = updatedSites.length;
     let completedSites = 0;
     console.error(`Found ${totalSites} (of ${siteData.length}) sites with updates.`);
@@ -126,13 +130,13 @@ scraper.logIn()
       return scraper.getPages(site.url)
         .then(pages => {
           completedSites++;
-          const updatedPages = pages.filter(page => dateFilter(page.lastChange));
+          const updatedPages = pages.filter(page => isAfterMinimumDate(page.lastChange));
           console.error(`Found ${pages.length} pages (${updatedPages.length} w/ updates) for ${site.name} (${completedSites}/${totalSites} sites checked)`);
 
           return Promise.all(updatedPages.map(page => {
             return scraper.getVersions(page.versionistaUrl)
               .then(versions => {
-                const newVersions = versions.filter(version => dateFilter(version.date));
+                const newVersions = versions.filter(version => isInRequestedDateRange(version.date));
                 console.error(`In ${page.url}:\n  ${versions.length} versions\n  ${newVersions.length} new versions`);
 
                 return Promise.all(newVersions.map(version => {
