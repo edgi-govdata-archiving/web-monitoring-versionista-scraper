@@ -169,7 +169,7 @@ scraper.logIn()
               outputFileName(version, 'diff'),
               version.diff.content));
           }
-          if (args['--save-content']) {
+          if (version.hasContent && args['--save-content']) {
             const savedFile = scraper
               .getVersionRawContent(version.url)
               .then(html => writeFile(outputFileName(version), html))
