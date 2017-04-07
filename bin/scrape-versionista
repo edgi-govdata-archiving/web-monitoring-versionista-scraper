@@ -145,6 +145,15 @@ scraper.logIn()
                     .then(diff => {
                       version.diff = diff;
                       return version;
+                    })
+                    .catch(error => {
+                      // it’s possible for Versionista to consign a version to
+                      // the ether between the time we detect the version and
+                      // ask for the diff, so this is "ok"
+                      if (error.code === 'VERSIONISTA:INVALID_URL') {
+                        return version;
+                      }
+                      return Promise.reject(error);
                     });
                 }))
                   // attach versions to pages
