@@ -143,7 +143,21 @@ scraper.logIn()
                   if (!version.diffWithPreviousUrl) return version;
                   return scraper.getVersionDiff(version.diffWithPreviousUrl)
                     .then(diff => {
-                      version.diff = diff;
+                      if (diff) {
+                        version.diff = {
+                          hash: diff.hash,
+                          length: diff.length
+                        };
+
+                        if (args['--save-diffs']) {
+                          return writeFile(
+                            outputFileName(version, 'diff'),
+                            diff.content
+                          )
+                          .then(() => version);
+                        }
+                      }
+
                       return version;
                     })
                     .catch(error => {
@@ -165,19 +179,14 @@ scraper.logIn()
         });
     }));
   })
-  // save diffs and versions
+  // save versions
   .then(sites => {
-    if (!args['--save-diffs'] && !args['--save-content']) return sites;
+    if (!args['--save-content']) return sites;
 
     const workTasks = [];
     sites.forEach(site => {
       site.pages.forEach(page => {
         page.versions.forEach(version => {
-          if (args['--save-diffs'] && version.diff) {
-            workTasks.push(writeFile(
-              outputFileName(version, 'diff'),
-              version.diff.content));
-          }
           if (version.hasContent && args['--save-content']) {
             const savedFile = scraper
               .getVersionRawContent(version.url)
