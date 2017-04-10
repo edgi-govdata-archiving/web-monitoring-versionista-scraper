@@ -186,28 +186,48 @@ scraper.logIn()
     const workTasks = [];
     sites.forEach(site => {
       site.pages.forEach(page => {
-        page.versions.forEach(version => {
-          if (version.hasContent && args['--save-content']) {
-            const savedFile = scraper
-              .getVersionRawContent(version.url)
-              .then(html => writeFile(outputFileName(version), html))
-              .catch(error => {
-                encounteredErrors = true;
+        const savedArchive = scraper
+          .getVersionArchive(page.versionistaUrl)
+          .then(content => {
+            const fileName = outputFileName(
+              {
+                siteId: site.id,
+                pageId: page.id,
+                versionId: 'all'
+              },
+              'archive',
+              'zip');
+            return writeFile(fileName, content, null);
+          })
+          .catch(error => {
+            // emit messages here and allow the process to continue
+            encounteredErrors = true;
+            console.error(error.message);
+          });
+        workTasks.push(savedArchive);
 
-                // Do some nice logging for a failure to get content. Also
-                // don't stop the works for this particular error.
-                if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
-                  console.error(error.message);
-                  console.error('  Requested urls:', error.urls);
-                  console.error(`  Raw response: "${error.formattedContent}"`);
-                }
-                else {
-                  throw error;
-                }
-              });
-            workTasks.push(savedFile);
-          }
-        });
+        // page.versions.forEach(version => {
+        //   if (version.hasContent && args['--save-content']) {
+        //     const savedFile = scraper
+        //       .getVersionRawContent(version.url)
+        //       .then(html => writeFile(outputFileName(version), html))
+        //       .catch(error => {
+        //         encounteredErrors = true;
+
+        //         // Do some nice logging for a failure to get content. Also
+        //         // don't stop the works for this particular error.
+        //         if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
+        //           console.error(error.message);
+        //           console.error('  Requested urls:', error.urls);
+        //           console.error(`  Raw response: "${error.formattedContent}"`);
+        //         }
+        //         else {
+        //           throw error;
+        //         }
+        //       });
+        //     workTasks.push(savedFile);
+        //   }
+        // });
       });
     });
     return Promise.all(workTasks).then(() => sites);
