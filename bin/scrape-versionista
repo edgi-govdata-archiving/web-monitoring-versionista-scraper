@@ -190,10 +190,12 @@ let basicMetadata = scraper.logIn()
                       // it’s possible for Versionista to consign a version to
                       // the ether between the time we detect the version and
                       // ask for the diff, so this is "ok"
-                      if (error.code === 'VERSIONISTA:INVALID_URL') {
-                        return version;
+                      // otherwise, log error but continue working
+                      if (error.code !== 'VERSIONISTA:INVALID_URL') {
+                        encounteredErrors++;
+                        writeError(error.message);
                       }
-                      return Promise.reject(error);
+                      return version;
                     });
                 }))
                   // attach versions to pages
