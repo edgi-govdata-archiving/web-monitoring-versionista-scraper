@@ -30,6 +30,7 @@ Options:
                        Or a number, representing hours before the current time
   --format FORMAT      Output format (csv|json|json-stream) [default: json]
   --output PATH        Write output to this file instead of STDOUT.
+  --errors PATH        Write error summary to this file instead of STDERR.
   --save-content       Save raw HTML of each version. Files are written to the
                        working directory or, if --output is specified, the same
                        directory as the output file.
@@ -98,6 +99,31 @@ function writeFile (name, content, encoding = 'utf8') {
   return writeIt();
 }
 
+let errorStream;
+function writeError (error) {
+  if (!errorStream) {
+    if (args['--errors']) {
+      errorStream = fs.createWriteStream(args['--errors']);
+    }
+    else {
+      errorStream = process.stderr;
+    }
+  }
+
+  errorStream.write(error);
+  errorStream.write('\n');
+}
+
+function flushErrors () {
+  if (errorStream && errorStream !== process.stderr) {
+    errorStream.end();
+  }
+}
+
+function pageHasDownloadableVersions (page) {
+  return page.versions.some(version => version.hasContent);
+}
+
 const scraper = new Versionista({
   email: args['--email'],
   password: args['--password']
@@ -115,8 +141,8 @@ const isInRequestedDateRange = (testDate) => {
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
-let encounteredErrors = false;
-scraper.logIn()
+let encounteredErrors = 0;
+let basicMetadata = scraper.logIn()
   .then(() => scraper.getSites())
   // TODO: rewrite this as a series or more readable sequential transforms
   // instead of nested ones.
@@ -178,61 +204,10 @@ scraper.logIn()
             .then(pages => Object.assign({pages}, site));
         });
     }));
-  })
-  // save versions
-  .then(sites => {
-    if (!args['--save-content']) return sites;
+  });
 
-    const workTasks = [];
-    sites.forEach(site => {
-      site.pages.forEach(page => {
-        const savedArchive = scraper
-          .getVersionArchive(page.versionistaUrl)
-          .then(content => {
-            const fileName = outputFileName(
-              {
-                siteId: site.id,
-                pageId: page.id,
-                versionId: 'all'
-              },
-              'archive',
-              'zip');
-            return writeFile(fileName, content, null);
-          })
-          .catch(error => {
-            // emit messages here and allow the process to continue
-            encounteredErrors = true;
-            console.error(error.message);
-          });
-        workTasks.push(savedArchive);
-
-        // page.versions.forEach(version => {
-        //   if (version.hasContent && args['--save-content']) {
-        //     const savedFile = scraper
-        //       .getVersionRawContent(version.url)
-        //       .then(html => writeFile(outputFileName(version), html))
-        //       .catch(error => {
-        //         encounteredErrors = true;
-
-        //         // Do some nice logging for a failure to get content. Also
-        //         // don't stop the works for this particular error.
-        //         if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
-        //           console.error(error.message);
-        //           console.error('  Requested urls:', error.urls);
-        //           console.error(`  Raw response: "${error.formattedContent}"`);
-        //         }
-        //         else {
-        //           throw error;
-        //         }
-        //       });
-        //     workTasks.push(savedFile);
-        //   }
-        // });
-      });
-    });
-    return Promise.all(workTasks).then(() => sites);
-  })
-  // format and save
+// save the metadata as-is before doing more work
+basicMetadata
   .then(data => formatter(data, {
     email: args['--email'],
     includeDiffs: args['--save-diffs'],
@@ -246,13 +221,130 @@ scraper.logIn()
     else {
       process.stdout.write(formatted);
     }
-  })
+  });
+
+if (args['--save-content']) {
+  basicMetadata = basicMetadata.then(sites => {
+    const workTasks = [];
+    sites.forEach(site => {
+      site.pages
+        .filter(pageHasDownloadableVersions)
+        .forEach(page => {
+          const savedArchive = scraper
+            .getVersionArchive(page.versionistaUrl)
+            .then(content => {
+              const fileName = outputFileName(
+                {
+                  siteId: site.id,
+                  pageId: page.id,
+                  versionId: 'all'
+                },
+                'archive',
+                'zip');
+              return writeFile(fileName, content, null);
+            })
+            .catch(error => {
+              // emit messages here and allow the process to continue
+              encounteredErrors++;
+              writeError(error.message);
+            });
+          workTasks.push(savedArchive);
+        });
+    });
+    return Promise.all(workTasks);
+  });
+}
+
+basicMetadata
   .catch(error => {
     console.error(error.stack);
-    encounteredErrors = true;
+    encounteredErrors++;
   })
   .then(() => {
     const seconds = Math.round((Date.now() - startTime) / 1000);
     console.error(`Completed in ${seconds} seconds`);
+    if (encounteredErrors) {
+      console.error(`  with ${encounteredErrors} errors`);
+    }
+    flushErrors();
     process.exit(encounteredErrors ? 1 : 0);
   });
+
+
+  // // save versions
+  // .then(sites => {
+  //   if (!args['--save-content']) return sites;
+
+  //   const workTasks = [];
+  //   sites.forEach(site => {
+  //     site.pages.forEach(page => {
+  //       const savedArchive = scraper
+  //         .getVersionArchive(page.versionistaUrl)
+  //         .then(content => {
+  //           const fileName = outputFileName(
+  //             {
+  //               siteId: site.id,
+  //               pageId: page.id,
+  //               versionId: 'all'
+  //             },
+  //             'archive',
+  //             'zip');
+  //           return writeFile(fileName, content, null);
+  //         })
+  //         .catch(error => {
+  //           // emit messages here and allow the process to continue
+  //           encounteredErrors = true;
+  //           console.error(error.message);
+  //         });
+  //       workTasks.push(savedArchive);
+
+  //       // page.versions.forEach(version => {
+  //       //   if (version.hasContent && args['--save-content']) {
+  //       //     const savedFile = scraper
+  //       //       .getVersionRawContent(version.url)
+  //       //       .then(html => writeFile(outputFileName(version), html))
+  //       //       .catch(error => {
+  //       //         encounteredErrors = true;
+
+  //       //         // Do some nice logging for a failure to get content. Also
+  //       //         // don't stop the works for this particular error.
+  //       //         if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
+  //       //           console.error(error.message);
+  //       //           console.error('  Requested urls:', error.urls);
+  //       //           console.error(`  Raw response: "${error.formattedContent}"`);
+  //       //         }
+  //       //         else {
+  //       //           throw error;
+  //       //         }
+  //       //       });
+  //       //     workTasks.push(savedFile);
+  //       //   }
+  //       // });
+  //     });
+  //   });
+  //   return Promise.all(workTasks).then(() => sites);
+  // })
+  // // format and save
+  // .then(data => formatter(data, {
+  //   email: args['--email'],
+  //   includeDiffs: args['--save-diffs'],
+  //   includeContent: args['--save-content'],
+  //   outputFileName: outputFileName
+  // }))
+  // .then(formatted => {
+  //   if (args['--output']) {
+  //     return writeFile(path.basename(args['--output']), formatted);
+  //   }
+  //   else {
+  //     process.stdout.write(formatted);
+  //   }
+  // })
+  // .catch(error => {
+  //   console.error(error.stack);
+  //   encounteredErrors = true;
+  // })
+  // .then(() => {
+  //   const seconds = Math.round((Date.now() - startTime) / 1000);
+  //   console.error(`Completed in ${seconds} seconds`);
+  //   process.exit(encounteredErrors ? 1 : 0);
+  // });
