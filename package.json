@@ -14,6 +14,7 @@
     "jsdom": "^9.12.0",
     "mkdirp": "^0.5.1",
     "neodoc": "^1.4.0",
-    "request": "^2.81.0"
+    "request": "^2.81.0",
+    "unzip-stream": "^0.1.2"
   }
 }

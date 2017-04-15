@@ -2,10 +2,13 @@
 'use strict';
 
 const path = require('path');
+const stream = require('stream');
 const fs = require('fs-promise');
-const neodoc = require('neodoc');
 const mkdirp = require('mkdirp');
+const neodoc = require('neodoc');
+const unzip = require('unzip-stream');
 const Versionista = require('..');
+require('../lib/polyfill');
 
 const formatters = {
   csv: require('../lib/formatters/csv.js'),
@@ -34,6 +37,8 @@ Options:
   --save-content       Save raw HTML of each version. Files are written to the
                        working directory or, if --output is specified, the same
                        directory as the output file.
+  --save-all-content   Like --save-content, but saves ALL versions, regardless
+                       of --before/--after date criteria.
   --save-diffs         Save HTML of diffs between versions. Outputs in the same
                        fashion as --save-content.
 `);
@@ -42,6 +47,10 @@ args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
 args['--password'] = args['--password'] || process.env.VERSIONISTA_PASSWORD;
 if (!args['--email'] || !args['--password']) {
   console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+}
+
+if (args['--save-all-content']) {
+  args['--save-content'] = 'all';
 }
 
 if (args['--before']) {
@@ -122,6 +131,19 @@ function flushErrors () {
 
 function pageHasDownloadableVersions (page) {
   return page.versions.some(version => version.hasContent);
+}
+
+function minimum (items, getValue = Number) {
+  let smallestValue = Infinity;
+  let smallestItem = null;
+  for (let item of items) {
+    let value = getValue(item);
+    if (value != null && value < smallestValue) {
+      smallestValue = value;
+      smallestItem = item;
+    }
+  }
+  return smallestItem;
 }
 
 const scraper = new Versionista({
@@ -226,34 +248,103 @@ basicMetadata
   });
 
 if (args['--save-content']) {
+  const unmatchedVersions = new Set();
   basicMetadata = basicMetadata.then(sites => {
     const workTasks = [];
     sites.forEach(site => {
       site.pages
         .filter(pageHasDownloadableVersions)
         .forEach(page => {
-          const savedArchive = scraper
-            .getVersionArchive(page.versionistaUrl)
+          page.versions.forEach(version => {
+            unmatchedVersions.add(version.versionId);
+          });
+
+          let baseDirectory = process.cwd();
+          if (args['--output']) {
+            baseDirectory = path.dirname(args['--output']);
+          }
+          const pageDirectory = `${site.id}-${page.id}`;
+          const pagePath = path.join(baseDirectory, pageDirectory);
+          const task = fs.ensureDir(pagePath)
+            .then(() => scraper.getVersionArchive(page.versionistaUrl))
             .then(content => {
-              const fileName = outputFileName(
-                {
-                  siteId: site.id,
-                  pageId: page.id,
-                  versionId: 'all'
-                },
-                'archive',
-                'zip');
-              return writeFile(fileName, content, null);
+              return new Promise((resolve, reject) => {
+                let writing = 1;
+                let errors = [];
+                const complete = (error) => {
+                  error && errors.push(error);
+                  writing = Math.max(0, writing - 1);
+                  if (writing === 0) {
+                    if (errors.length) {
+                      reject(errors.map(error => error.message).join('\n'));
+                    }
+                    else {
+                      resolve();
+                    }
+                  }
+                };
+                const contentStream = new stream.PassThrough();
+                contentStream.end(content);
+                contentStream.pipe(unzip.Parse())
+                  .on('entry', entry => {
+                    if (entry.type === 'File') {
+                      const [_, year, month, day, hour, minute, second, extension = ''] =
+                        entry.path.match(/^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)[^\.]*(\..*)?$/);
+                      const isoDate = `${year}-${month}-${day}T${hour}:${minute}:${second}Z`;
+                      const fileDate = new Date(isoDate);
+
+                      // Frustratingly, the timestamps on the files do not
+                      // match the timestamps on the version records. So...
+                      // find the closest matching timestamp, but also require
+                      // it to be within a narrow threshold.
+                      const allowableTimeframe = 5 * 60 * 1000;
+                      const fileVersion = minimum(page.versions, version => {
+                        const value = Math.abs(version.date - fileDate);
+                        return (value < allowableTimeframe) ? value : null;
+                      });
+
+                      let outputName = entry.path;
+                      if (fileVersion) {
+                        outputName = `version-${fileVersion.versionId}${extension}`;
+                        unmatchedVersions.delete(fileVersion.versionId);
+                      }
+                      else if (args['--save-content'] !== 'all') {
+                        resolve();
+                        entry.autodrain();
+                        return;
+                      }
+
+                      const versionFile = path.join(pagePath, outputName);
+                      entry
+                        .pipe(fs.createWriteStream(versionFile))
+                        .on('error', complete)
+                        .on('close', () => complete());
+
+                      writing++;
+                    }
+                    else {
+                      entry.autodrain();
+                    }
+                  })
+                  .on('end', () => complete());
+              });
             })
             .catch(error => {
               // emit messages here and allow the process to continue
               encounteredErrors++;
               writeError(error.message);
             });
-          workTasks.push(savedArchive);
+          workTasks.push(task);
         });
     });
-    return Promise.all(workTasks);
+    return Promise.all(workTasks)
+      .then(tasks => {
+        if (unmatchedVersions.size > 0) {
+          encounteredErrors++;
+          writeError(`${unmatchedVersions.size} versions not found in downloaded archives: ${Array.from(unmatchedVersions)}`);
+        }
+      })
+      .then(() => sites);
   });
 }
 
@@ -271,82 +362,3 @@ basicMetadata
     flushErrors();
     process.exit(encounteredErrors ? 1 : 0);
   });
-
-
-  // // save versions
-  // .then(sites => {
-  //   if (!args['--save-content']) return sites;
-
-  //   const workTasks = [];
-  //   sites.forEach(site => {
-  //     site.pages.forEach(page => {
-  //       const savedArchive = scraper
-  //         .getVersionArchive(page.versionistaUrl)
-  //         .then(content => {
-  //           const fileName = outputFileName(
-  //             {
-  //               siteId: site.id,
-  //               pageId: page.id,
-  //               versionId: 'all'
-  //             },
-  //             'archive',
-  //             'zip');
-  //           return writeFile(fileName, content, null);
-  //         })
-  //         .catch(error => {
-  //           // emit messages here and allow the process to continue
-  //           encounteredErrors = true;
-  //           console.error(error.message);
-  //         });
-  //       workTasks.push(savedArchive);
-
-  //       // page.versions.forEach(version => {
-  //       //   if (version.hasContent && args['--save-content']) {
-  //       //     const savedFile = scraper
-  //       //       .getVersionRawContent(version.url)
-  //       //       .then(html => writeFile(outputFileName(version), html))
-  //       //       .catch(error => {
-  //       //         encounteredErrors = true;
-
-  //       //         // Do some nice logging for a failure to get content. Also
-  //       //         // don't stop the works for this particular error.
-  //       //         if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
-  //       //           console.error(error.message);
-  //       //           console.error('  Requested urls:', error.urls);
-  //       //           console.error(`  Raw response: "${error.formattedContent}"`);
-  //       //         }
-  //       //         else {
-  //       //           throw error;
-  //       //         }
-  //       //       });
-  //       //     workTasks.push(savedFile);
-  //       //   }
-  //       // });
-  //     });
-  //   });
-  //   return Promise.all(workTasks).then(() => sites);
-  // })
-  // // format and save
-  // .then(data => formatter(data, {
-  //   email: args['--email'],
-  //   includeDiffs: args['--save-diffs'],
-  //   includeContent: args['--save-content'],
-  //   outputFileName: outputFileName
-  // }))
-  // .then(formatted => {
-  //   if (args['--output']) {
-  //     return writeFile(path.basename(args['--output']), formatted);
-  //   }
-  //   else {
-  //     process.stdout.write(formatted);
-  //   }
-  // })
-  // .catch(error => {
-  //   console.error(error.stack);
-  //   encounteredErrors = true;
-  // })
-  // .then(() => {
-  //   const seconds = Math.round((Date.now() - startTime) / 1000);
-  //   console.error(`Completed in ${seconds} seconds`);
-  //   process.exit(encounteredErrors ? 1 : 0);
-  // });
