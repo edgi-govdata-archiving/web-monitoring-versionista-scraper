@@ -315,7 +315,7 @@ if (args['--save-content']) {
                       // match the timestamps on the version records. So...
                       // find the closest matching timestamp, but also require
                       // it to be within a narrow threshold.
-                      const allowableTimeframe = 5 * 60 * 1000;
+                      const allowableTimeframe = 30 * 60 * 1000;
                       const fileVersion = minimum(page.versions, version => {
                         const value = Math.abs(version.date - fileDate);
                         return (value < allowableTimeframe) ? value : null;
