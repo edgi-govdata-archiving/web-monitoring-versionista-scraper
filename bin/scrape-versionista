@@ -187,6 +187,14 @@ let basicMetadata = scraper.logIn()
                 const newVersions = versions.filter(version => isInRequestedDateRange(version.date));
                 console.error(`In ${page.url}:\n  ${versions.length} versions\n  ${newVersions.length} new versions`);
 
+                // FIXME: this is duplicated in the content-saving logic below
+                let baseDirectory = process.cwd();
+                if (args['--output']) {
+                  baseDirectory = path.dirname(args['--output']);
+                }
+                const pageDirectory = `${site.id}-${page.id}`;
+                const pagePath = path.join(baseDirectory, pageDirectory);
+
                 return Promise.all(newVersions.map(version => {
                   if (!version.diffWithPreviousUrl) return version;
                   return scraper.getVersionDiff(version.diffWithPreviousUrl)
@@ -198,11 +206,13 @@ let basicMetadata = scraper.logIn()
                         };
 
                         if (args['--save-diffs']) {
-                          return writeFile(
-                            outputFileName(version, 'diff'),
-                            diff.content
-                          )
-                          .then(() => version);
+                          const fileName = `diff-${version.versionId}.html`;
+                          return fs.ensureDir(pagePath)
+                            .then(() => fs.writeFile(
+                              path.join(pagePath, fileName),
+                              diff.content
+                            ))
+                            .then(() => version);
                         }
                       }
 
