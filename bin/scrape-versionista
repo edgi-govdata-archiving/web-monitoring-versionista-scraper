@@ -206,12 +206,13 @@ let basicMetadata = scraper.logIn()
                         };
 
                         if (args['--save-diffs']) {
-                          const fileName = `diff-${version.versionId}.html`;
+                          const diffPath = path.join(
+                            pagePath,
+                            `diff-${version.versionId}.html`
+                          );
+                          version.diff.path = diffPath;
                           return fs.ensureDir(pagePath)
-                            .then(() => fs.writeFile(
-                              path.join(pagePath, fileName),
-                              diff.content
-                            ))
+                            .then(() => fs.writeFile(diffPath, diff.content))
                             .then(() => version);
                         }
                       }
@@ -240,22 +241,26 @@ let basicMetadata = scraper.logIn()
     }));
   });
 
+function saveMetadata (sites) {
+  return Promise.resolve(sites)
+    .then(data => formatter(data, {
+      email: args['--email'],
+      includeDiffs: args['--save-diffs'],
+      includeContent: args['--save-content'],
+      outputFileName: outputFileName
+    }))
+    .then(formatted => {
+      if (args['--output']) {
+        return writeFile(path.basename(args['--output']), formatted);
+      }
+      else {
+        process.stdout.write(formatted);
+      }
+    });
+}
+
 // save the metadata as-is before doing more work
-basicMetadata
-  .then(data => formatter(data, {
-    email: args['--email'],
-    includeDiffs: args['--save-diffs'],
-    includeContent: args['--save-content'],
-    outputFileName: outputFileName
-  }))
-  .then(formatted => {
-    if (args['--output']) {
-      return writeFile(path.basename(args['--output']), formatted);
-    }
-    else {
-      process.stdout.write(formatted);
-    }
-  });
+saveMetadata(basicMetadata);
 
 if (args['--save-content']) {
   const unmatchedVersions = new Set();
@@ -317,6 +322,7 @@ if (args['--save-content']) {
                       if (fileVersion) {
                         outputName = `version-${fileVersion.versionId}${extension}`;
                         unmatchedVersions.delete(fileVersion.versionId);
+                        fileVersion.filePath = path.join(pagePath, outputName);
                       }
                       else if (args['--save-content'] !== 'all') {
                         resolve();
@@ -358,7 +364,8 @@ if (args['--save-content']) {
   });
 }
 
-basicMetadata
+// save again to get any updates from downloading raw versions
+saveMetadata(basicMetadata)
   .catch(error => {
     console.error(error.stack);
     encounteredErrors++;
