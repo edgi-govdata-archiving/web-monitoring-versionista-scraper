@@ -270,9 +270,12 @@ if (args['--save-content']) {
       site.pages
         .filter(pageHasDownloadableVersions)
         .forEach(page => {
-          page.versions.forEach(version => {
-            unmatchedVersions.add(version.versionId);
-          });
+          // track list of versions that we *should* see in archives
+          page.versions
+            .filter(version => version.hasContent)
+            .forEach(version => {
+              unmatchedVersions.add(version.versionId);
+            });
 
           let baseDirectory = process.cwd();
           if (args['--output']) {
