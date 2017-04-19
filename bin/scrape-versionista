@@ -81,10 +81,6 @@ if (args['--after']) {
   }
 }
 
-function outputFileName (version, tag = 'content', extension = 'html') {
-  return `${version.siteId}-${version.pageId}-${version.versionId}-${tag}.${extension}`;
-}
-
 // FIXME: this should be encapsulated in a function
 let baseDirectory = process.cwd();
 if (args['--output']) {
@@ -110,7 +106,10 @@ function writeFile (name, content, encoding = 'utf8') {
 }
 
 let errorStream;
-function writeError (error) {
+let errorCount = 0;
+function logError (error) {
+  errorCount++;
+
   if (!errorStream) {
     if (args['--errors']) {
       errorStream = fs.createWriteStream(args['--errors']);
@@ -120,7 +119,7 @@ function writeError (error) {
     }
   }
 
-  errorStream.write(error);
+  errorStream.write(error.stack || error.message || error.toString());
   errorStream.write('\n');
 }
 
@@ -172,101 +171,6 @@ const isInRequestedDateRange = (testDate) => {
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
-
-// const versionStream = new stream.PassThrough({objectMode: true});
-// scraper.streamSites().on('data', site => {
-//   scraper.streamPages(site).on('data', page => {
-//     scraper.streamVersions(page).on('data', version => {
-//       versionStream.write(version);
-//     });
-//   });
-// });
-
-// const through2Stream = (concurrency, transformer) => {
-//   return through2Concurrent({maxConcurrency}, function (item, enc, callback) {
-//     transformer(item)
-//       .on('data', this.push.bind(this))
-//       .on('error', callback)
-//       .on('end', () => callback());
-//   });
-// }
-
-// const streamFilter = (filterFunction) => through2((data, enc, callback) =>  {
-//   try {
-//     callback(null, filterFunction(data) ? data : null);
-//   }
-//   catch (error) {
-//     callback(error);
-//   }
-// });
-
-// const versionStream = scraper.streamSites()
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   .pipe(through2Stream(6, site => scraper.streamPages(site)))
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   .pipe(through2Stream(6, page => scraper.streamVersions(page)))
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   // .pipe(through2Stream(6, version => ))
-//   // .pipe(through2Stream(6, site => scraper.streamPages(site)))
-
-
-// const versionStream = scraper.streamSites()
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   .pipe(parallel(6, (site, callback) => {
-//     scraper.streamPages(site)
-//       .on('data', this.push.bind(this))
-//       .on('error', callback)
-//       .on('end', () => callback());
-//   }))
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   .pipe(parallel(6, (page, callback) => {
-//     scraper.streamVersions(page)
-//       .on('data', this.push.bind(this))
-//       .on('error', callback)
-//       .on('end', () => callback());
-//   }))
-//   .pipe(streamFilter(isInRequestedDateRange))
-//   .pipe(parallel(6, (version, callback) => {
-//     const diffStream = scraper.streamVersionDiff(version.diffWithPreviousUrl)
-//       .on('metadata', metadata => {
-//         version.diff = version.diff || {};
-//         Object.assign(version.diff, metadata);
-//         callback(null, version);
-//       })
-//       .on('error', error => {
-//         if (error.code !== 'VERSIONISTA:INVALID_URL') {
-//           encounteredErrors++;
-//           writeError(error.message);
-//         }
-//         callback(null, version);
-//       });
-
-//     if (args['--save-diffs']) {
-//       const diffPath = path.join(pagePath, `diff-${version.versionId}.html`);
-//       version.diff = {path: diffPath};
-//       diffStream.pause();
-//       mkdirp(pagePath, error => {
-//         if (error) {
-//           diffStream.emit('error', error);
-//         }
-//         else {
-//           diffStream.pipe(fs.createWriteStream(diffPath));
-//         }
-//         diffStream.resume();
-//       });
-//     }
-//   }));
-
-// if (args['--save-content']) {
-//   pageStream
-//     .pipe(parallel(6, function (page, callback) {
-
-//     }))
-//     .on('end', )
-// }
-
-let encounteredErrors = 0;
-
 function archiveVersionDiff (version) {
   if (!version.diffWithPreviousUrl) {
     return;
@@ -301,8 +205,7 @@ function archiveVersionDiff (version) {
       // ask for the diff, so this is "ok"
       // otherwise, log error but continue working
       if (error.code !== 'VERSIONISTA:INVALID_URL') {
-        encounteredErrors++;
-        writeError(error.message);
+        logError(error);
       }
     })
     .then(() => version);
@@ -370,8 +273,7 @@ function archivePageVersions (page, versions) {
     }))
     .catch(error => {
       // emit messages here and allow the process to continue
-      encounteredErrors++;
-      writeError(error.message);
+      logError(error);
     });
 }
 
@@ -432,8 +334,7 @@ versions
   .then(data => formatter(data, {
     email: args['--email'],
     includeDiffs: args['--save-diffs'],
-    includeContent: args['--save-content'],
-    outputFileName: outputFileName
+    includeContent: args['--save-content']
   }))
   .then(formatted => {
     if (args['--output']) {
@@ -444,15 +345,14 @@ versions
     }
   })
   .catch(error => {
-    console.error(error.stack);
-    encounteredErrors++;
+    logError(error);
   })
   .then(() => {
     const seconds = Math.round((Date.now() - startTime) / 1000);
     console.error(`Completed in ${seconds} seconds`);
-    if (encounteredErrors) {
-      console.error(`  with ${encounteredErrors} errors`);
+    if (errorCount) {
+      console.error(`  with ${errorCount} errors`);
     }
     flushErrors();
-    process.exit(encounteredErrors ? 1 : 0);
+    process.exit(errorCount ? 1 : 0);
   });
