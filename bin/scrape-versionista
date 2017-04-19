@@ -229,6 +229,7 @@ function archivePageVersions (page, versions) {
   return fs.ensureDir(pagePath)
     .then(() => new Promise((resolve, reject) => {
       scraper.getVersionArchiveEntries(page.versionistaUrl)
+        .on('error', reject)
         .pipe(stream.Transform({
           objectMode: true,
           transform: function (entry, encoding, callback) {
