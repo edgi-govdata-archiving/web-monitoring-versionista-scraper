@@ -308,20 +308,19 @@ let pages = sites
 let versions = pages
   .then(pages => {
     const versionsForPages = pages.map(page => {
-      const versions = scraper.getVersions(page.versionistaUrl);
-      const relevantVersions = versions
+      const versions = scraper.getVersions(page.versionistaUrl)
         .then(versions => versions.filter(isInRequestedDateRange))
         .then(versions => {
           page.versions = versions;
           return versions;
         });
 
-      const archived = relevantVersions
+      const archived = versions
         .then(archivePageVersions.bind(null, page));
-      const diffed = relevantVersions
+      const diffed = versions
         .then(versions => Promise.all(versions.map(archiveVersionDiff)))
 
-      return Promise.all([diffed, archived]).then(() => relevantVersions);
+      return Promise.all([diffed, archived]).then(() => versions);
     });
     return Promise.all(versionsForPages).then(flatten);
   })
