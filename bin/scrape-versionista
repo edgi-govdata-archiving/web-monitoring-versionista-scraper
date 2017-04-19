@@ -376,8 +376,7 @@ function archivePageVersions (page, versions) {
 }
 
 
-let sites = scraper.logIn()
-  .then(() => scraper.getSites())
+let sites = scraper.getSites()
   .then(sites => sites.filter(isInRequestedDateRange))
   .then(sites => {
     console.error(`Found ${sites.length} sites with potential updates`);
