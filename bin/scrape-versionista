@@ -360,9 +360,13 @@ function archivePageVersions (page, versions) {
           }
         }))
         .resume()
-        // .on('data', () => null)
         .on('error', reject)
-        .on('end', resolve);
+        .on('end', () => {
+          if (unmatchedVersions.size > 0) {
+            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${Array.from(unmatchedVersions)} (Page ${page.id})`));
+          }
+          resolve();
+        })
     }))
     .catch(error => {
       // emit messages here and allow the process to continue
