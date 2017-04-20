@@ -10,9 +10,11 @@
   },
   "dependencies": {
     "fs-promise": "^2.0.0",
+    "html-entities": "^1.2.0",
     "jsdom": "^9.12.0",
     "mkdirp": "^0.5.1",
     "neodoc": "^1.4.0",
-    "request": "^2.81.0"
+    "request": "^2.81.0",
+    "unzip-stream": "^0.1.2"
   }
 }

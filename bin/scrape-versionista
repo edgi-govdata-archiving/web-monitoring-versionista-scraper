@@ -2,10 +2,13 @@
 'use strict';
 
 const path = require('path');
+const stream = require('stream');
 const fs = require('fs-promise');
-const neodoc = require('neodoc');
 const mkdirp = require('mkdirp');
+const neodoc = require('neodoc');
 const Versionista = require('..');
+const flatten = require('../lib/flatten');
+require('../lib/polyfill');
 
 const formatters = {
   csv: require('../lib/formatters/csv.js'),
@@ -30,9 +33,12 @@ Options:
                        Or a number, representing hours before the current time
   --format FORMAT      Output format (csv|json|json-stream) [default: json]
   --output PATH        Write output to this file instead of STDOUT.
+  --errors PATH        Write error summary to this file instead of STDERR.
   --save-content       Save raw HTML of each version. Files are written to the
                        working directory or, if --output is specified, the same
                        directory as the output file.
+  --save-all-content   Like --save-content, but saves ALL versions, regardless
+                       of --before/--after date criteria.
   --save-diffs         Save HTML of diffs between versions. Outputs in the same
                        fashion as --save-content.
 `);
@@ -41,6 +47,10 @@ args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
 args['--password'] = args['--password'] || process.env.VERSIONISTA_PASSWORD;
 if (!args['--email'] || !args['--password']) {
   console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+}
+
+if (args['--save-all-content']) {
+  args['--save-content'] = 'all';
 }
 
 if (args['--before']) {
@@ -71,23 +81,20 @@ if (args['--after']) {
   }
 }
 
-function outputFileName (version, tag = 'content', extension = 'html') {
-  return `${version.siteId}-${version.pageId}-${version.versionId}-${tag}.${extension}`;
+// FIXME: this should be encapsulated in a function
+let baseDirectory = process.cwd();
+if (args['--output']) {
+  baseDirectory = path.dirname(args['--output']);
 }
 
 let directoryIsReady = false;
 function writeFile (name, content, encoding = 'utf8') {
-  let directory = process.cwd();
-  if (args['--output']) {
-    directory = path.dirname(args['--output']);
-  }
-
-  const filePath = path.join(directory, name);
+  const filePath = path.join(baseDirectory, name);
   const writeIt = () => fs.writeFile(filePath, content, encoding);
 
   if (!directoryIsReady) {
     return new Promise((resolve, reject) => {
-      mkdirp(directory, (error, created) => {
+      mkdirp(baseDirectory, (error, created) => {
         if (error) return reject(error);
         directoryIsReady = true;
         resolve(created);
@@ -96,6 +103,43 @@ function writeFile (name, content, encoding = 'utf8') {
   }
 
   return writeIt();
+}
+
+let errorStream;
+let errorCount = 0;
+function logError (error) {
+  errorCount++;
+
+  if (!errorStream) {
+    if (args['--errors']) {
+      errorStream = fs.createWriteStream(args['--errors']);
+    }
+    else {
+      errorStream = process.stderr;
+    }
+  }
+
+  errorStream.write(error.stack || error.message || error.toString());
+  errorStream.write('\n');
+}
+
+function flushErrors () {
+  if (errorStream && errorStream !== process.stderr) {
+    errorStream.end();
+  }
+}
+
+function minimum (items, getValue = Number) {
+  let smallestValue = Infinity;
+  let smallestItem = null;
+  for (let item of items) {
+    let value = getValue(item);
+    if (value != null && value < smallestValue) {
+      smallestValue = value;
+      smallestItem = item;
+    }
+  }
+  return smallestItem;
 }
 
 const scraper = new Versionista({
@@ -107,117 +151,190 @@ const isAfterMinimumDate = (testDate) => {
   return !args['--after'] || args['--after'] <= testDate;
 };
 
+const isBeforeMaximumDate = (testDate) => {
+  return !args['--before'] || args['--before'] >= testDate;
+};
+
 const isInRequestedDateRange = (testDate) => {
-  return isAfterMinimumDate(testDate) &&
-    (!args['--before'] || args['--before'] >= testDate);
+  if (testDate instanceof Date) {
+    return isAfterMinimumDate(testDate) && isBeforeMaximumDate(testDate);
+  }
+  else if (testDate.date) {
+    return isInRequestedDateRange(testDate.date);
+  }
+  else if (testDate.lastChange) {
+    return isAfterMinimumDate(testDate.lastChange);
+  }
+  throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
 }
 
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
-let encounteredErrors = false;
-scraper.logIn()
-  .then(() => scraper.getSites())
-  // TODO: rewrite this as a series or more readable sequential transforms
-  // instead of nested ones.
-  .then(siteData => {
-    const updatedSites = siteData.filter(site => isAfterMinimumDate(site.lastChange));
-    let totalSites = updatedSites.length;
-    let completedSites = 0;
-    console.error(`Found ${totalSites} (of ${siteData.length}) sites with updates.`);
+function archiveVersionDiff (version) {
+  if (!version.diffWithPreviousUrl) {
+    return;
+  }
 
-    return Promise.all(updatedSites.map(site => {
-      return scraper.getPages(site.url)
-        .then(pages => {
-          completedSites++;
-          const updatedPages = pages.filter(page => isAfterMinimumDate(page.lastChange));
-          console.error(`Found ${pages.length} pages (${updatedPages.length} w/ updates) for ${site.name} (${completedSites}/${totalSites} sites checked)`);
+  const pageDirectory = `${version.siteId}-${version.pageId}`;
+  const pagePath = path.join(baseDirectory, pageDirectory);
 
-          return Promise.all(updatedPages.map(page => {
-            return scraper.getVersions(page.versionistaUrl)
-              .then(versions => {
-                const newVersions = versions.filter(version => isInRequestedDateRange(version.date));
-                console.error(`In ${page.url}:\n  ${versions.length} versions\n  ${newVersions.length} new versions`);
+  return scraper.getVersionDiff(version.diffWithPreviousUrl)
+    .then(diff => {
+      if (diff) {
+        version.diff = {
+          hash: diff.hash,
+          length: diff.length
+        };
 
-                return Promise.all(newVersions.map(version => {
-                  if (!version.diffWithPreviousUrl) return version;
-                  return scraper.getVersionDiff(version.diffWithPreviousUrl)
-                    .then(diff => {
-                      if (diff) {
-                        version.diff = {
-                          hash: diff.hash,
-                          length: diff.length
-                        };
+        if (args['--save-diffs']) {
+          version.diff.path = path.join(
+            baseDirectory,
+            `${version.siteId}-${version.pageId}`,
+            `diff-${version.versionId}.html`
+          );
+          return fs.ensureDir(pagePath)
+            .then(() => fs.writeFile(version.diff.path, diff.content))
+            .then(() => version);
+        }
+      }
+    })
+    .catch(error => {
+      // it’s possible for Versionista to consign a version to
+      // the ether between the time we detect the version and
+      // ask for the diff, so this is "ok"
+      // otherwise, log error but continue working
+      if (error.code !== 'VERSIONISTA:INVALID_URL') {
+        logError(error);
+      }
+    })
+    .then(() => version);
+}
 
-                        if (args['--save-diffs']) {
-                          return writeFile(
-                            outputFileName(version, 'diff'),
-                            diff.content
-                          )
-                          .then(() => version);
-                        }
-                      }
+function archivePageVersions (page, versions) {
+  const downloadableVersions = versions.filter(version => version.hasContent);
 
-                      return version;
-                    })
-                    .catch(error => {
-                      // it’s possible for Versionista to consign a version to
-                      // the ether between the time we detect the version and
-                      // ask for the diff, so this is "ok"
-                      if (error.code === 'VERSIONISTA:INVALID_URL') {
-                        return version;
-                      }
-                      return Promise.reject(error);
-                    });
-                }))
-                  // attach versions to pages
-                  .then(versions => Object.assign({versions}, page));
-              });
-          }))
-            // attach pages to site
-            .then(pages => Object.assign({pages}, site));
-        });
-    }));
-  })
-  // save versions
-  .then(sites => {
-    if (!args['--save-content']) return sites;
+  if (!downloadableVersions.length || !args['--save-content']) {
+    return Promise.resolve(page);
+  }
 
-    const workTasks = [];
-    sites.forEach(site => {
-      site.pages.forEach(page => {
-        page.versions.forEach(version => {
-          if (version.hasContent && args['--save-content']) {
-            const savedFile = scraper
-              .getVersionRawContent(version.url)
-              .then(html => writeFile(outputFileName(version), html))
-              .catch(error => {
-                encounteredErrors = true;
+  const siteId = versions[0].siteId;
+  const unmatchedVersions = new Set(
+    downloadableVersions.map(version => version.versionId)
+  );
 
-                // Do some nice logging for a failure to get content. Also
-                // don't stop the works for this particular error.
-                if (error.code === 'VERSIONISTA:NO_VERSION_CONTENT') {
-                  console.error(error.message);
-                  console.error('  Requested urls:', error.urls);
-                  console.error(`  Raw response: "${error.formattedContent}"`);
-                }
-                else {
-                  throw error;
-                }
-              });
-            workTasks.push(savedFile);
+  const pageDirectory = `${siteId}-${page.id}`;
+  const pagePath = path.join(baseDirectory, pageDirectory);
+
+  return fs.ensureDir(pagePath)
+    .then(() => new Promise((resolve, reject) => {
+      scraper.getVersionArchiveEntries(page.versionistaUrl)
+        .on('error', reject)
+        .pipe(stream.Transform({
+          objectMode: true,
+          transform: function (entry, encoding, callback) {
+            entry.resume();
+            // Frustratingly, the timestamps on the files do not
+            // match the timestamps on the version records. So...
+            // find the closest matching timestamp, but also require
+            // it to be within a narrow threshold.
+            const allowableTimeframe = 30 * 60 * 1000;
+            const fileVersion = minimum(versions, version => {
+              const timeApart = Math.abs(version.date - entry.date);
+              return (timeApart < allowableTimeframe) ? timeApart : null;
+            });
+
+            let outputName = entry.path;
+            if (fileVersion) {
+              outputName = `version-${fileVersion.versionId}${entry.extension}`;
+              unmatchedVersions.delete(fileVersion.versionId);
+              fileVersion.filePath = path.join(pagePath, outputName);
+              entry.on('hash', hash => fileVersion.hash = hash.toString('hex'));
+            }
+            else if (args['--save-content'] !== 'all') {
+              entry.autodrain();
+              return callback();
+            }
+
+            const versionFile = path.join(pagePath, outputName);
+            entry
+              .pipe(fs.createWriteStream(versionFile))
+              .on('error', callback)
+              .on('finish', callback);
           }
-        });
-      });
+        }))
+        .resume()
+        .on('error', reject)
+        .on('end', () => {
+          if (unmatchedVersions.size > 0) {
+            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${Array.from(unmatchedVersions)} (Page ${page.id})`));
+          }
+          resolve();
+        })
+    }))
+    .catch(error => {
+      // emit messages here and allow the process to continue
+      logError(error);
     });
-    return Promise.all(workTasks).then(() => sites);
+}
+
+
+let sites = scraper.getSites()
+  .then(sites => sites.filter(isInRequestedDateRange))
+  .then(sites => {
+    console.error(`Found ${sites.length} sites with potential updates`);
+    return sites;
+  });
+
+let pages = sites
+  .then(sites => {
+    // TODO: remove need to create references between pages and sites
+    // return Promise.all(sites.map(site => scraper.getPages(site.url)));
+    const pagesForSites = sites.map(site => {
+      return scraper.getPages(site.url)
+        .then(pages => pages.filter(isInRequestedDateRange))
+        .then(pages => {
+          site.pages = pages;
+          return pages;
+        });
+    });
+    return Promise.all(pagesForSites).then(flatten);
   })
-  // format and save
+  .then(pages => {
+    console.error(`Found ${pages.length} pages with potential updates`);
+    return pages;
+  });
+
+let versions = pages
+  .then(pages => {
+    const versionsForPages = pages.map(page => {
+      const versions = scraper.getVersions(page.versionistaUrl)
+        .then(versions => versions.filter(isInRequestedDateRange))
+        .then(versions => {
+          page.versions = versions;
+          return versions;
+        });
+
+      const archived = versions
+        .then(archivePageVersions.bind(null, page));
+      const diffed = versions
+        .then(versions => Promise.all(versions.map(archiveVersionDiff)))
+
+      return Promise.all([diffed, archived]).then(() => versions);
+    });
+    return Promise.all(versionsForPages).then(flatten);
+  })
+  .then(versions => {
+    console.error(`Found ${versions.length} versions with updates`);
+    return versions;
+  });
+
+versions
+  .then(() => sites)
   .then(data => formatter(data, {
     email: args['--email'],
     includeDiffs: args['--save-diffs'],
-    includeContent: args['--save-content'],
-    outputFileName: outputFileName
+    includeContent: args['--save-content']
   }))
   .then(formatted => {
     if (args['--output']) {
@@ -228,11 +345,14 @@ scraper.logIn()
     }
   })
   .catch(error => {
-    console.error(error.stack);
-    encounteredErrors = true;
+    logError(error);
   })
   .then(() => {
     const seconds = Math.round((Date.now() - startTime) / 1000);
     console.error(`Completed in ${seconds} seconds`);
-    process.exit(encounteredErrors ? 1 : 0);
+    if (errorCount) {
+      console.error(`  with ${errorCount} errors`);
+    }
+    flushErrors();
+    process.exit(errorCount ? 1 : 0);
   });
