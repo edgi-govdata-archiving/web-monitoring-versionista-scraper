@@ -51,6 +51,7 @@ pump(
 
     fs.createReadStream(file.path)
       .pipe(remoteFile.createWriteStream({
+        resumable: false,
         public: true,
         metadata: {
           contentType: mime.lookup(file.path) || 'application/octet-stream'
