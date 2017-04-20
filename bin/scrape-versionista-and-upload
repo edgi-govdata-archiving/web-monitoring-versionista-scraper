@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const spawn = require('child_process').spawn;
+const mkdirp = require('mkdirp');
+const neodoc = require('neodoc');
+
+const args = neodoc.run(`
+Usage: scrape-versionista-and-upload [options] --output DIRECTORY
+
+Options:
+  -h, --help            Print this lovely help message.
+  --after HOURS         Only include versions from N hours ago. [default: 1]
+  --output DIRECTORY    Write output to this directory.
+  --email STRING        Versionista account e-mail address [env: VERSIONISTA_EMAIL]
+  --password STRING     Versionista account password [env: VERSIONISTA_PASSWORD]
+  --s3-key KEY          S3 access key [env: AWS_S3_KEY]
+  --s3-secret SECRET    S3 secret key [env: AWS_S3_SECRET]
+  --s3-bucket NAME      S3 bucket to upload to [env: AWS_S3_BUCKET]
+  --google-project ID   Google Cloud project ID [env: GOOGLE_PROJECT_ID]
+  --google-key PATH     Google Cloud key file [env: GOOGLE_STORAGE_KEY_FILE]
+  --google-bucket NAME  Google Could bucket to upload to [env: GOOGLE_BUCKET]
+  --throughput NUM      Number of simultaneous uploads to allow
+`);
+
+const scriptsPath = __dirname;
+const outputDirectory = args['--output'];
+
+const scrapeTime = new Date();
+// Use ISO Zulu time without seconds in our time strings
+const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
+const throughput = args['--throughput'] ? (args['--throughput'] / 2) : 0;
+
+archiveAndUpload(args['--email'], args['--password'], error => {
+  if (error) {
+    console.error(error);
+    process.exit(1);
+  }
+  else {
+    console.error('Archive and upload complete!');
+  }
+});
+
+
+function archiveAndUpload (email, password, callback) {
+  const account = email.match(/^(.+)@/)[1];
+  const mainDirectory = path.join(outputDirectory, account);
+
+  mkdirp(mainDirectory, error => {
+    if (error) {
+      return callback(error);
+    }
+
+    const scraper = spawn(
+      path.join(scriptsPath, 'scrape-versionista'),
+      [
+        '--email', email,
+        '--password', password,
+        '--after', '0.5',
+        '--format', 'json-stream',
+        '--output', path.join(mainDirectory, `metadata-${timeString}.json`),
+        '--errors', path.join(mainDirectory, `errors-${timeString}.log`),
+        '--save-content',
+        '--save-diffs'
+      ],
+      {
+        stdio: 'inherit'
+      });
+
+    scraper.on('close', code => {
+      if (code !== 0) {
+        return callback(new Error(`Failed to scrape account ${email}`))
+      }
+
+      upload(account, callback);
+    });
+  });
+}
+
+function upload (account, callback) {
+  const uploadDirectory = path.join(outputDirectory, account);
+  let remaining = 2;
+  let errors = [];
+  function complete (error) {
+    remaining--;
+    if (error) {
+      errors.push(error);
+    }
+
+    if (!remaining) {
+      const message = errors.length ? new Error(errors.join('\n')) : null;
+      callback(message);
+    }
+  }
+
+  const s3 = spawn(
+    path.join(scriptsPath, 'upload-to-s3'),
+    [
+      '--key', args['--s3-key'],
+      '--secret', args['--s3-secret'],
+      '--prefix', `${account}/`,
+      '--throughput', throughput || 50,
+      args['--s3-bucket'],
+      uploadDirectory
+    ],
+    {
+      stdio: 'inherit'
+    });
+
+  const google = spawn(
+    path.join(scriptsPath, 'upload-to-google'),
+    [
+      '--keyfile', args['--google-key'],
+      '--project', args['--google-project'],
+      '--prefix', `${account}/`,
+      // NOTE: Google is a little slow and can't take high throughput :(
+      '--throughput', throughput || 10,
+      args['--google-bucket'],
+      uploadDirectory
+    ],
+    {
+      stdio: 'inherit'
+    });
+
+  s3.on('close', code => {
+    if (code == 0) {
+      console.error('Successfully uploaded to S3');
+    }
+    complete(code ? 'Failed to upload to S3.' : null);
+  });
+  google.on('close', code => {
+    if (code == 0) {
+      console.error('Successfully uploaded to Google Cloud');
+    }
+    complete(code ? 'Failed to upload to Google Cloud.' : null);
+  });
+}
