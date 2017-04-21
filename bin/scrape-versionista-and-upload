@@ -57,7 +57,7 @@ function archiveAndUpload (email, password, callback) {
       [
         '--email', email,
         '--password', password,
-        '--after', '0.5',
+        '--after', args['--after'],
         '--format', 'json-stream',
         '--output', path.join(mainDirectory, `metadata-${timeString}.json`),
         '--errors', path.join(mainDirectory, `errors-${timeString}.log`),
