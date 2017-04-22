@@ -40,26 +40,31 @@ const basePath = args['<path>'];
 const prefix = args['--prefix'] || '';
 const startDate = Date.now();
 
+function uploadFile (file, callback) {
+  const objectKey = `${prefix}${path.relative(basePath, file.path)}`;
+  const remoteFile = bucket.file(objectKey);
+
+  fs.createReadStream(file.path)
+    .pipe(remoteFile.createWriteStream({
+      resumable: false,
+      public: true,
+      metadata: {
+        contentType: mime.lookup(file.path) || 'application/octet-stream'
+      }
+    }))
+    .on('error', callback)
+    .on('finish', () => callback());
+}
+
 pump(
   klaw(basePath),
+  // skip hidden files, directories (we still hit the files they contain)
   filterStream(file => {
     return path.basename(file.path)[0] !== '.' && !file.stats.isDirectory();
   }),
-  parallel(throughput, (file, callback) => {
-    const objectKey = `${prefix}${path.relative(basePath, file.path)}`;
-    const remoteFile = bucket.file(objectKey);
-
-    fs.createReadStream(file.path)
-      .pipe(remoteFile.createWriteStream({
-        resumable: false,
-        public: true,
-        metadata: {
-          contentType: mime.lookup(file.path) || 'application/octet-stream'
-        }
-      }))
-      .on('error', callback)
-      .on('finish', () => callback());
-  }),
+  // handle metadata-* files last
+  deferStreamItems(file => path.basename(file.path).startsWith('metadata-')),
+  parallel(throughput, uploadFile),
   error => {
     if (error) {
       console.error(error);
@@ -86,6 +91,32 @@ function filterStream (predicate) {
       catch (error) {
         return callback(error);
       }
+    }
+  });
+}
+
+function deferStreamItems (predicate) {
+  const deferred = [];
+
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          deferred.push(data);
+        }
+        else {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    },
+    flush (callback) {
+      deferred.forEach(data => this.push(data));
+      callback();
     }
   });
 }

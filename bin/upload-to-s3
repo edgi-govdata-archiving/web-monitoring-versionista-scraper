@@ -38,21 +38,26 @@ const basePath = args['<path>'];
 const prefix = args['--prefix'] || '';
 const startDate = Date.now();
 
+function uploadFile (file, callback) {
+  const objectKey = `${prefix}${path.relative(basePath, file.path)}`;
+  s3.upload({
+    Bucket: args['<bucket>'],
+    ACL: 'public-read',
+    ContentType: mime.lookup(file.path) || 'application/octet-stream',
+    Key: objectKey,
+    Body: fs.createReadStream(file.path)
+  }, (error, result) => callback(error));
+}
+
 pump(
   klaw(basePath),
+  // skip hidden files, directories (we still hit the files they contain)
   filterStream(file => {
     return path.basename(file.path)[0] !== '.' && !file.stats.isDirectory();
   }),
-  parallel(throughput, (file, callback) => {
-    const objectKey = `${prefix}${path.relative(basePath, file.path)}`;
-    s3.upload({
-      Bucket: args['<bucket>'],
-      ACL: 'public-read',
-      ContentType: mime.lookup(file.path) || 'application/octet-stream',
-      Key: objectKey,
-      Body: fs.createReadStream(file.path)
-    }, (error, result) => callback(error));
-  }),
+  // handle metadata-* files last
+  deferStreamItems(file => path.basename(file.path).startsWith('metadata-')),
+  parallel(throughput, uploadFile),
   error => {
     if (error) {
       console.error(error);
@@ -79,6 +84,32 @@ function filterStream (predicate) {
       catch (error) {
         return callback(error);
       }
+    }
+  });
+}
+
+function deferStreamItems (predicate) {
+  const deferred = [];
+
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          deferred.push(data);
+        }
+        else {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    },
+    flush (callback) {
+      deferred.forEach(data => this.push(data));
+      callback();
     }
   });
 }
