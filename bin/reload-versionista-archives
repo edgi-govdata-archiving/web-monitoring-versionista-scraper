@@ -1,0 +1,206 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const stream = require('stream');
+const fs = require('fs-promise');
+const neodoc = require('neodoc');
+const parallel = require('parallel-transform');
+const pump = require('pump');
+const split = require('split');
+const Versionista = require('..');
+
+const args = neodoc.run(`
+This tool helps remediate errors downloading page archives (zip files of all raw
+version content for a page), as long as the metadata was saved to a file. (Note
+metadata must be in json-stream format.)
+
+It will redownload archives for the given page IDs. Version metadata will be
+scanned to determine which versions map to which files in the archive. Output
+is normally limited to versions in the metadata file, but using the
+--save-all-content argument will cause unmatched versions to be output as well.
+
+Usage: reload-versionista-archives [options] --metadata PATH <page ids>...
+
+Options:
+  -h, --help           Print this lovely help message.
+  --email ADDRESS      E-mail address of Versionista Account. You can also use
+                       an env var instead. [env: VERSIONISTA_EMAIL]
+  --password PASSWORD  Password of Versionista Account. You can also use an env
+                       var instead. [env: VERSIONISTA_PASSWORD]
+  --metadata PATH      Path to versions metadata file in json-stream format.
+  --save-all-content   Like --save-content, but saves ALL versions, regardless
+                       of --before/--after date criteria.
+`);
+
+const baseDirectory = path.dirname(args['--metadata']);
+const pageIds = args['<page ids>'].map(String);
+
+const scraper = new Versionista({
+  email: args['--email'],
+  password: args['--password']
+});
+
+const pages = pump(
+  fs.createReadStream(args['--metadata']),
+  split(JSON.parse),
+  groupStream('pageId'),
+  filterStream(page => pageIds.includes(page.key)),
+  parallel(2, (page, callback) => {
+    const aVersion = page.data[0] || {};
+    const pageObject = {
+      id: page.key,
+      versionistaUrl: `https://versionista.com/${aVersion.siteId}/${page.key}/`
+    };
+
+    page.data.forEach(version => version.date = new Date(version.date));
+
+    console.error(`Archiving page ${aVersion.siteId}/${page.key}`);
+
+    archivePageVersions(pageObject, page.data)
+      .then(() => {
+        console.error(`Successfully archived ${aVersion.siteId}/${page.key}`);
+      })
+      .catch(error => {
+        console.error(`Failed to get ${aVersion.siteId}/${page.key}: ${error}`);
+      })
+      .then(() => callback());
+  }),
+  error => {
+    console.error(error || 'No errors!');
+  }
+);
+
+
+
+// HELPERS -----------------
+
+// TODO: share these helpers with the implementations in scrape-versionista
+function minimum (items, getValue = Number) {
+  let smallestValue = Infinity;
+  let smallestItem = null;
+  for (let item of items) {
+    let value = getValue(item);
+    if (value != null && value < smallestValue) {
+      smallestValue = value;
+      smallestItem = item;
+    }
+  }
+  return smallestItem;
+}
+
+function archivePageVersions (page, versions) {
+  const downloadableVersions = versions.filter(version => version.hasContent);
+
+  if (!downloadableVersions.length) {
+    return Promise.resolve(page);
+  }
+
+  const siteId = versions[0].siteId;
+  const unmatchedVersions = new Set(
+    downloadableVersions.map(version => version.versionId)
+  );
+
+  const pageDirectory = `${siteId}-${page.id}`;
+  const pagePath = path.join(baseDirectory, pageDirectory);
+
+  return fs.ensureDir(pagePath)
+    .then(() => new Promise((resolve, reject) => {
+      scraper.getVersionArchiveEntries(page.versionistaUrl)
+        .on('error', reject)
+        .pipe(stream.Transform({
+          objectMode: true,
+          transform: function (entry, encoding, callback) {
+            entry.resume();
+            // Frustratingly, the timestamps on the files do not
+            // match the timestamps on the version records. So...
+            // find the closest matching timestamp, but also require
+            // it to be within a narrow threshold.
+            const allowableTimeframe = 30 * 60 * 1000;
+            const fileVersion = minimum(versions, version => {
+              const timeApart = Math.abs(version.date - entry.date);
+              return (timeApart < allowableTimeframe) ? timeApart : null;
+            });
+
+            let outputName = entry.path;
+            if (fileVersion) {
+              outputName = `version-${fileVersion.versionId}${entry.extension}`;
+              unmatchedVersions.delete(fileVersion.versionId);
+              fileVersion.filePath = path.join(pagePath, outputName);
+              entry.on('hash', hash => fileVersion.hash = hash.toString('hex'));
+            }
+            else if (args['save-all-conten']) {
+              entry.autodrain();
+              return callback();
+            }
+
+            const versionFile = path.join(pagePath, outputName);
+            entry
+              .pipe(fs.createWriteStream(versionFile))
+              .on('error', callback)
+              .on('finish', callback);
+          }
+        }))
+        .resume()
+        .on('error', reject)
+        .on('end', () => {
+          if (unmatchedVersions.size > 0) {
+            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${Array.from(unmatchedVersions)} (Page ${page.id})`));
+          }
+          resolve();
+        })
+    }));
+}
+
+function groupStream (predicate) {
+  if (typeof predicate !== 'function') {
+    const keyProperty = predicate;
+    predicate = data => data[keyProperty];
+  }
+
+  let groups = {};
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        const groupKey = predicate(data);
+        if (!groups[groupKey]) groups[groupKey] = [];
+        groups[groupKey].push(data);
+      }
+      catch (error) {
+        return callback(error);
+      }
+      callback();
+    },
+    flush (callback) {
+      for (let groupKey in groups) {
+        this.push({
+          key: groupKey,
+          data: groups[groupKey]
+        });
+      }
+      callback();
+      groups = null;
+    }
+  });
+}
+
+function filterStream (predicate) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+
+

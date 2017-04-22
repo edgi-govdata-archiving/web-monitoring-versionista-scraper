@@ -1,0 +1,122 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const stream = require('stream');
+const fs = require('fs');
+const klaw = require('klaw');
+const mime = require('mime-types');
+const neodoc = require('neodoc');
+const parallel = require('parallel-transform');
+const pump = require('pump');
+const CloudStorage = require('@google-cloud/storage');
+
+const args = neodoc.run(`
+Uploads a directory's contents to Google Cloud Storage bucket.
+
+Usage: upload-to-google [options] <bucket> <path>
+
+Options:
+  -h, --help        Print this lovely help message.
+  --project ID      Google Cloud project ID [env: GOOGLE_PROJECT_ID]
+  --keyfile PATH    Google Cloud access key file [env: GOOGLE_STORAGE_KEY_FILE]
+  --prefix PREFIX   Prefix to add to the keys all objects uploaded
+  --throughput NUM  Maximum number of simultaneous file uploads [default: 10]
+`);
+
+// TODO: this and `upload-to-s3` are 95% the same. They should share code.
+
+// register custom mime types
+mime.types['jsonl'] = 'application/json';
+
+const cloudStorage = CloudStorage({
+  projectId: args['--project'],
+  keyFilename: args['--keyfile']
+});
+
+const bucket = cloudStorage.bucket(args['<bucket>']);
+const throughput = args['--throughput'];
+const basePath = args['<path>'];
+const prefix = args['--prefix'] || '';
+const startDate = Date.now();
+
+function uploadFile (file, callback) {
+  const objectKey = `${prefix}${path.relative(basePath, file.path)}`;
+  const remoteFile = bucket.file(objectKey);
+
+  fs.createReadStream(file.path)
+    .pipe(remoteFile.createWriteStream({
+      resumable: false,
+      public: true,
+      metadata: {
+        contentType: mime.lookup(file.path) || 'application/octet-stream'
+      }
+    }))
+    .on('error', callback)
+    .on('finish', () => callback());
+}
+
+pump(
+  klaw(basePath),
+  // skip hidden files, directories (we still hit the files they contain)
+  filterStream(file => {
+    return path.basename(file.path)[0] !== '.' && !file.stats.isDirectory();
+  }),
+  // handle metadata-* files last
+  deferStreamItems(file => path.basename(file.path).startsWith('metadata-')),
+  parallel(throughput, uploadFile),
+  error => {
+    if (error) {
+      console.error(error);
+    }
+
+    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
+  });
+
+
+
+
+// HELPERS -----------------
+
+function filterStream (predicate) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+function deferStreamItems (predicate) {
+  const deferred = [];
+
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          deferred.push(data);
+        }
+        else {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    },
+    flush (callback) {
+      deferred.forEach(data => this.push(data));
+      callback();
+    }
+  });
+}
