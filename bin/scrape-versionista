@@ -25,9 +25,9 @@ Options:
                        You can also use an env var instead: VERSIONISTA_EMAIL
   --password PASSWORD  Password of Versionista Account.
                        You can also use an env var instead: VERSIONISTA_PASSWORD
-  --account-name NAME  A name to use for the versionista account in output data.
-                       This allows you to obfuscate the account's e-mail address
-                       in output data. If not specified, the email will be used.
+  --account-name NAME  A name to use for the versionista account instead of the
+                       e-mail address in output data. If not specified, the
+                       email will be used. [env: VERSIONISTA_NAME]
   --after DATE         Only include versions after this date.
                        An ISO8601 date string like '2017-03-01T00:00:00Z'
                        Or a number, representing hours before the current time
