@@ -25,6 +25,9 @@ Options:
                        You can also use an env var instead: VERSIONISTA_EMAIL
   --password PASSWORD  Password of Versionista Account.
                        You can also use an env var instead: VERSIONISTA_PASSWORD
+  --account-name NAME  A name to use for the versionista account in output data.
+                       This allows you to obfuscate the account's e-mail address
+                       in output data. If not specified, the email will be used.
   --after DATE         Only include versions after this date.
                        An ISO8601 date string like '2017-03-01T00:00:00Z'
                        Or a number, representing hours before the current time
@@ -47,6 +50,10 @@ args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
 args['--password'] = args['--password'] || process.env.VERSIONISTA_PASSWORD;
 if (!args['--email'] || !args['--password']) {
   console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+}
+
+if (!args['--account-name']) {
+  args['--account-name'] = args['--email'];
 }
 
 if (args['--save-all-content']) {
@@ -332,7 +339,7 @@ let versions = pages
 versions
   .then(() => sites)
   .then(data => formatter(data, {
-    email: args['--email'],
+    account: args['--account-name'],
     includeDiffs: args['--save-diffs'],
     includeContent: args['--save-content']
   }))
