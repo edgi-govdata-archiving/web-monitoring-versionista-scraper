@@ -57,7 +57,7 @@ pump(
   }),
   // handle metadata-* files last
   deferStreamItems(file => path.basename(file.path).startsWith('metadata-')),
-  parallel(throughput, uploadFile),
+  parallel(throughput, retryable(uploadFile)),
   error => {
     if (error) {
       console.error(error);
@@ -70,6 +70,28 @@ pump(
 
 
 // HELPERS -----------------
+
+function retryable (operation, retryDelay = 10000, maxRetries = 3) {
+  return function (...args) {
+    const callback = args.pop();
+    let tries = 1;
+
+    const handleResult = (error, ...rest) => {
+      if (error) {
+        if (tries < maxRetries) {
+          tries++;
+          setTimeout(() => operation.apply(this, args), retryDelay);
+          return;
+        }
+      }
+
+      callback(error, ...rest);
+    };
+
+    args.push(handleResult);
+    operation.apply(this, args);
+  };
+}
 
 function filterStream (predicate) {
   return stream.Transform({
