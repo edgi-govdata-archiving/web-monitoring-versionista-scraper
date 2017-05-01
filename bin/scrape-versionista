@@ -20,30 +20,31 @@ const args = neodoc.run(`
 Usage: scrape-versionista [options]
 
 Options:
-  -h, --help           Print this lovely help message.
-  --email ADDRESS      E-mail address of Versionista Account.
-                       You can also use an env var instead: VERSIONISTA_EMAIL
-  --password PASSWORD  Password of Versionista Account.
-                       You can also use an env var instead: VERSIONISTA_PASSWORD
-  --account-name NAME  A name to use for the versionista account instead of the
-                       e-mail address in output data. If not specified, the
-                       email will be used. [env: VERSIONISTA_NAME]
-  --after DATE         Only include versions after this date.
-                       An ISO8601 date string like '2017-03-01T00:00:00Z'
-                       Or a number, representing hours before the current time
-  --before DATE        Only include versions created before this time.
-                       An ISO8601 date string like '2017-03-01T00:00:00Z'
-                       Or a number, representing hours before the current time
-  --format FORMAT      Output format (csv|json|json-stream) [default: json]
-  --output PATH        Write output to this file instead of STDOUT.
-  --errors PATH        Write error summary to this file instead of STDERR.
-  --save-content       Save raw HTML of each version. Files are written to the
-                       working directory or, if --output is specified, the same
-                       directory as the output file.
-  --save-all-content   Like --save-content, but saves ALL versions, regardless
-                       of --before/--after date criteria.
-  --save-diffs         Save HTML of diffs between versions. Outputs in the same
-                       fashion as --save-content.
+  -h, --help             Print this lovely help message.
+  --email ADDRESS        E-mail address of Versionista Account. You can also use
+                         an env var instead: VERSIONISTA_EMAIL
+  --password PASSWORD    Password of Versionista Account. You can also use an
+                         env var instead: VERSIONISTA_PASSWORD
+  --account-name NAME    A name to use for the versionista account instead of
+                         the e-mail address in output data. If not specified,
+                         the email will be used. [env: VERSIONISTA_NAME]
+  --after DATE           Only include versions after this date.
+                         An ISO8601 date string like '2017-03-01T00:00:00Z'
+                         Or a number, representing hours before the current time
+  --before DATE          Only include versions created before this time.
+                         An ISO8601 date string like '2017-03-01T00:00:00Z'
+                         Or a number, representing hours before the current time
+  --format FORMAT        Output format (csv|json|json-stream) [default: json]
+  --output PATH          Write output to this file instead of STDOUT.
+  --errors PATH          Write error summary to this file instead of STDERR.
+  --save-content         Save raw HTML of each version. Files are written to the
+                         working directory or, if --output is specified, the
+                         same directory as the output file.
+  --save-all-content     Like --save-content, but saves ALL versions, regardless
+                         of --before/--after date criteria.
+  --save-diffs           Save HTML of diffs between versions. Outputs in the
+                         same fashion as --save-content.
+  --relative-paths PATH  Make file paths in output data relative to this path.
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
@@ -86,6 +87,12 @@ if (args['--after']) {
       process.exit(1);
     }
   }
+}
+
+let getCleanedPath = original => original;
+if (args['--relative-paths']) {
+  let trimPath = args['--relative-paths'];
+  getCleanedPath = original => path.relative(trimPath, original);
 }
 
 // FIXME: this should be encapsulated in a function
@@ -195,13 +202,13 @@ function archiveVersionDiff (version) {
         };
 
         if (args['--save-diffs']) {
-          version.diff.path = path.join(
-            baseDirectory,
-            `${version.siteId}-${version.pageId}`,
+          const fullDiffPath = path.join(
+            pagePath,
             `diff-${version.versionId}.html`
           );
+          version.diff.path = getCleanedPath(fullDiffPath);
           return fs.ensureDir(pagePath)
-            .then(() => fs.writeFile(version.diff.path, diff.content))
+            .then(() => fs.writeFile(fullDiffPath, diff.content))
             .then(() => version);
         }
       }
@@ -251,11 +258,13 @@ function archivePageVersions (page, versions) {
               return (timeApart < allowableTimeframe) ? timeApart : null;
             });
 
-            let outputName = entry.path;
+            let outputPath = path.join(pagePath, entry.path);
             if (fileVersion) {
-              outputName = `version-${fileVersion.versionId}${entry.extension}`;
+              let name = `version-${fileVersion.versionId}${entry.extension}`;
+              outputPath = path.join(pagePath, name);
+
               unmatchedVersions.delete(fileVersion.versionId);
-              fileVersion.filePath = path.join(pagePath, outputName);
+              fileVersion.filePath = getCleanedPath(outputPath);
               entry.on('hash', hash => fileVersion.hash = hash.toString('hex'));
             }
             else if (args['--save-content'] !== 'all') {
@@ -263,9 +272,8 @@ function archivePageVersions (page, versions) {
               return callback();
             }
 
-            const versionFile = path.join(pagePath, outputName);
             entry
-              .pipe(fs.createWriteStream(versionFile))
+              .pipe(fs.createWriteStream(outputPath))
               .on('error', callback)
               .on('finish', callback);
           }
