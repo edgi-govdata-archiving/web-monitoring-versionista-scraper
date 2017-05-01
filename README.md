@@ -86,8 +86,16 @@ $ scrape-versionista --after 0.5
 ```
 
 
+## Contributing Guidelines
+
+We love improvements to our tools! EDGI has general [guidelines for contributing](https://github.com/edgi-govdata-archiving/overview/blob/master/CONTRIBUTING.md) to all of our organizational repos.
+
+
 ## License & Copyright
 
-All source code in this repository is copyright (c) 2017 Robert Brackett.
+Copyright (C) 2017 Environmental Data and Governance Initiative (EDGI)
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 3.0.
 
-It is licensed under the GPL v3 source code license, found in the [`LICENSE`](https://github.com/Mr0grog/versionista-edgi-node/blob/master/LICENSE) file.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+See the [`LICENSE`](https://github.com/edgi-govdata-archiving/web-monitoring-versionista-scraper/blob/master/LICENSE) file for details.
