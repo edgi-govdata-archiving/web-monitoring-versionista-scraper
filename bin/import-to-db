@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const stream = require('stream');
-const fs = require('fs');
 const neodoc = require('neodoc');
 const parallel = require('parallel-transform');
 const pump = require('pump');
@@ -14,7 +14,7 @@ const args = neodoc.run(`
 Sends the contents of an JSON-stream versions file generated scrape-versionista
 to an instance of web-monitoring-db.
 
-Usage: import-to-db [options] <path>
+Usage: import-to-db [options] <paths>...
 
 Options:
   -h, --help       Print this lovely help message.
@@ -32,7 +32,7 @@ if (!args['--host'].endsWith('/')) {
 
 const dbUrl = `${args['--host']}api/v0/imports`
 const chunkSize = args['--chunk'];
-const versionsDataPath = args['<path>'];
+const versionFilePaths = args['<paths>'];
 const email = args['--email'];
 const password = args['--password'];
 const startDate = Date.now();
@@ -76,35 +76,61 @@ function importableVersion (version) {
 let exitCode = 0;
 let versionsImported = 0;
 let versionsTotal = 0;
-pump(
-  fs.createReadStream(versionsDataPath),
-  split(line => (line === '' ? null : JSON.parse(line))),
-  mapStream(importableVersion),
-  chunkedObjectStream(chunkSize),
-  parallel(5, importIntoDb),
-  mapStream(importResult => {
-    const errors = importResult.processing_errors;
-    versionsTotal += importResult.processed_versions;
-    versionsImported += importResult.processed_versions - errors.length;
+let filesTotal = 0;
 
-    if (errors.length) {
-      exitCode = 1;
-      errors.forEach(error => console.error(error));
-    }
+function importJsonFile (filePath, callback) {
+  pump(
+    fs.createReadStream(filePath),
+    split(line => (line === '' ? null : JSON.parse(line))),
+    mapStream(importableVersion),
+    chunkedObjectStream(chunkSize),
+    parallel(5, importIntoDb),
+    mapStream(importResult => {
+      const errors = importResult.processing_errors;
+      versionsTotal += importResult.processed_versions;
+      versionsImported += importResult.processed_versions - errors.length;
 
-    console.log(`Completed ${versionsTotal} versions.`);
-  }),
-  error => {
-    if (error) {
-      exitCode = 1;
-      console.error(error);
-    }
+      if (errors.length) {
+        exitCode = 1;
+        errors.forEach(error => console.error(error));
+      }
 
-    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
-    console.error(`  ${versionsImported} of ${versionsTotal} imported.`)
-    process.exit(exitCode);
+      console.log(`Completed ${versionsTotal} versions.`);
+    }),
+    callback
+  );
+}
+
+function complete (error) {
+  if (error) {
+    exitCode = 1;
+    console.error(error);
   }
-);
+
+  console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
+  console.error(`  ${versionsImported} of ${versionsTotal} imported from ${filesTotal} files.`)
+  process.exit(exitCode);
+}
+
+function processNextFile () {
+  const filePath = versionFilePaths.shift();
+  if (filePath) {
+    console.error(`Loading "${filePath}"`);
+    importJsonFile(filePath, error => {
+      filesTotal++;
+      if (error) {
+        return complete(error);
+      }
+      processNextFile();
+    });
+  }
+  else {
+    complete();
+  }
+}
+
+// GO!!!!
+processNextFile();
 
 
 // HELPERS -----------------
