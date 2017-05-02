@@ -1,0 +1,213 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const stream = require('stream');
+const fs = require('fs');
+const neodoc = require('neodoc');
+const parallel = require('parallel-transform');
+const pump = require('pump');
+const request = require('request');
+const split = require('split');
+
+const args = neodoc.run(`
+Sends the contents of an JSON-stream versions file generated scrape-versionista
+to an instance of web-monitoring-db.
+
+Usage: import-to-db [options] <path>
+
+Options:
+  -h, --help       Print this lovely help message.
+  --email EMAIL    E-Mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
+  --password PASS  PASSWORD for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
+  --host HOST      Alternate host name for web-monitoring-db. Use this to send
+                   data to an alternate instance of the DB.
+                   [default: https://web-monitoring-db.herokuapp.com/]
+  --chunk SIZE     Send versions in chunks of this size. [default: 1000]
+`);
+
+if (!args['--host'].endsWith('/')) {
+  args['--host'] += '/';
+}
+
+const dbUrl = `${args['--host']}api/v0/imports`
+const chunkSize = args['--chunk'];
+const versionsDataPath = args['<path>'];
+const email = args['--email'];
+const password = args['--password'];
+const startDate = Date.now();
+
+function importableVersion (version) {
+  let s3Url = undefined;
+  if (version.filePath) {
+    let s3Path = [
+      version.account,
+      `${version.siteId}-${version.pageId}`,
+      path.basename(version.filePath)
+    ].join('/');
+    s3Url = `https://edgi-versionista-archive.s3.amazonaws.com/${s3Path}`;
+  }
+
+  return {
+    page_url: version.pageUrl,
+    page_title: version.pageTitle,
+    site_agency: version.agency,
+    site_name: version.siteName,
+    capture_time: version.date,
+    uri: s3Url,
+    version_hash: version.hash,
+    source_type: 'versionista',
+    source_metadata: {
+      account: version.account,
+      site_id: version.siteId,
+      page_id: version.pageId,
+      version_id: version.versionId,
+      url: version.url,
+      has_content: version.hasContent,
+      errorCode: version.is404Page ? '404' : version.errorCode,
+      diff_with_previous_url: version.diffWithPreviousUrl,
+      diff_with_first_url: version.diffWithFirstUrl,
+      diff_hash: version.diff && version.diff.hash,
+      diff_length: version.diff && version.diff.length
+    }
+  };
+}
+
+let exitCode = 0;
+let versionsImported = 0;
+let versionsTotal = 0;
+pump(
+  fs.createReadStream(versionsDataPath),
+  split(line => (line === '' ? null : JSON.parse(line))),
+  mapStream(importableVersion),
+  chunkedObjectStream(chunkSize),
+  parallel(5, importIntoDb),
+  mapStream(importResult => {
+    const errors = importResult.processing_errors;
+    versionsTotal += importResult.processed_versions;
+    versionsImported += importResult.processed_versions - errors.length;
+
+    if (errors.length) {
+      exitCode = 1;
+      errors.forEach(error => console.error(error));
+    }
+
+    console.log(`Completed ${versionsTotal} versions.`);
+  }),
+  error => {
+    if (error) {
+      exitCode = 1;
+      console.error(error);
+    }
+
+    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
+    console.error(`  ${versionsImported} of ${versionsTotal} imported.`)
+    process.exit(exitCode);
+  }
+);
+
+
+// HELPERS -----------------
+
+function mapStream (mapper) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        this.push(mapper(data));
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+function filterStream (predicate) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+function chunkedObjectStream (chunkSize = Infinity) {
+  if (chunkSize < 1 || typeof chunkSize !== 'number') {
+    chunkSize = 1;
+  }
+
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      if (!this._chunkBuffer) {
+        this._chunkBuffer = [];
+      }
+      this._chunkBuffer.push(data);
+      if (this._chunkBuffer.length === chunkSize) {
+        this.push(this._chunkBuffer);
+        this._chunkBuffer = [];
+      }
+      callback();
+    },
+    flush (callback) {
+      if (this._chunkBuffer.length) {
+        this.push(this._chunkBuffer);
+      }
+      this._chunkBuffer = null;
+      callback();
+    }
+  });
+}
+
+function importIntoDb (versions, callback) {
+  request({
+    method: 'POST',
+    url: dbUrl,
+    auth: {username: email, password},
+    headers: {'Content-Type': 'application/x-json-stream'},
+    body: versions.map(v => JSON.stringify(v)).join('\n')
+  }, (error, response, rawBody) => {
+    if (error) {
+      return callback(error)
+    }
+
+    const body = JSON.parse(rawBody);
+
+    if (body.errors) {
+      return callback(body.errors[0]);
+    }
+
+    const importId = body.data.id;
+    const poll = (callback) => {
+      setTimeout(() => {
+        request({
+          url: `${dbUrl}/${importId}`,
+          auth: {username: email, password},
+          json: true
+        }, (error, response, body) => {
+          if (error) {
+            return callback(error);
+          }
+          else if (body.data.status !== 'complete') {
+            return poll(callback);
+          }
+
+          body.data.processed_versions = versions.length;
+          callback(null, body.data);
+        });
+      }, 1000);
+    };
+
+    poll(callback);
+  });
+}
