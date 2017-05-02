@@ -186,7 +186,7 @@ function chunkedObjectStream (chunkSize = Infinity) {
       callback();
     },
     flush (callback) {
-      if (this._chunkBuffer.length) {
+      if (this._chunkBuffer && this._chunkBuffer.length) {
         this.push(this._chunkBuffer);
       }
       this._chunkBuffer = null;
