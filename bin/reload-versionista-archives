@@ -41,9 +41,12 @@ const scraper = new Versionista({
   password: args['--password']
 });
 
+const allVersions = [];
+
 const pages = pump(
   fs.createReadStream(args['--metadata']),
-  split(JSON.parse),
+  split(line => (line === '' ? null : JSON.parse(line))),
+  filterStream(version => (allVersions.push(version), true)),
   groupStream('pageId'),
   filterStream(page => pageIds.includes(page.key)),
   parallel(2, (page, callback) => {
@@ -68,6 +71,16 @@ const pages = pump(
   }),
   error => {
     console.error(error || 'No errors!');
+
+    // Save updates
+    if (!erors) {
+      const writer = fs.createWriteStream(args['--metadata']);
+      for (let version of allVersions) {
+        writer.write(JSON.stringify(version));
+        writer.write('\n');
+      }
+      writer.end();
+    }
   }
 );
 
@@ -97,9 +110,7 @@ function archivePageVersions (page, versions) {
   }
 
   const siteId = versions[0].siteId;
-  const unmatchedVersions = new Set(
-    downloadableVersions.map(version => version.versionId)
-  );
+  const unmatchedVersions = new Set(downloadableVersions);
 
   const pageDirectory = `${siteId}-${page.id}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
@@ -117,7 +128,7 @@ function archivePageVersions (page, versions) {
             // find the closest matching timestamp, but also require
             // it to be within a narrow threshold.
             const allowableTimeframe = 30 * 60 * 1000;
-            const fileVersion = minimum(versions, version => {
+            const fileVersion = minimum(unmatchedVersions, version => {
               const timeApart = Math.abs(version.date - entry.date);
               return (timeApart < allowableTimeframe) ? timeApart : null;
             });
@@ -125,7 +136,7 @@ function archivePageVersions (page, versions) {
             let outputName = entry.path;
             if (fileVersion) {
               outputName = `version-${fileVersion.versionId}${entry.extension}`;
-              unmatchedVersions.delete(fileVersion.versionId);
+              unmatchedVersions.delete(fileVersion);
               fileVersion.filePath = path.join(pagePath, outputName);
               entry.on('hash', hash => fileVersion.hash = hash.toString('hex'));
             }
@@ -145,7 +156,8 @@ function archivePageVersions (page, versions) {
         .on('error', reject)
         .on('end', () => {
           if (unmatchedVersions.size > 0) {
-            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${Array.from(unmatchedVersions)} (Page ${page.id})`));
+            const ids = Array.from(unmatchedVersions).map(v => v.versionId);
+            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${ids} (Page ${page.id})`));
           }
           resolve();
         })
