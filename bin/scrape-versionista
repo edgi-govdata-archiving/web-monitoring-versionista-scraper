@@ -191,18 +191,21 @@ const isInRequestedDateRange = (testDate) => {
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
-function archiveVersionDiff (version) {
+function archiveVersionDiff (version, diffType) {
   if (!version.diffWithPreviousUrl) {
     return;
   }
 
+  const fileSuffix = (diffType === 'text_only') ? '-text' : '';
+  const fieldName = (diffType === 'text_only') ? 'textDiff' : 'diff';
+
   const pageDirectory = `${version.siteId}-${version.pageId}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
 
-  return scraper.getVersionDiff(version.diffWithPreviousUrl)
+  return scraper.getVersionDiff(version.diffWithPreviousUrl, diffType)
     .then(diff => {
       if (diff) {
-        version.diff = {
+        version[fieldName] = {
           hash: diff.hash,
           length: diff.length
         };
@@ -210,9 +213,9 @@ function archiveVersionDiff (version) {
         if (args['--save-diffs']) {
           const fullDiffPath = path.join(
             pagePath,
-            `diff-${version.versionId}.html`
+            `diff-${version.versionId}${fileSuffix}.html`
           );
-          version.diff.path = getCleanedPath(fullDiffPath);
+          version[fieldName].path = getCleanedPath(fullDiffPath);
           return fs.ensureDir(pagePath)
             .then(() => fs.writeFile(fullDiffPath, diff.content))
             .then(() => version);
@@ -344,9 +347,13 @@ let versions = pages
       const archived = versions
         .then(archivePageVersions.bind(null, page));
       const diffed = versions
-        .then(versions => Promise.all(versions.map(archiveVersionDiff)))
+        .then(versions => Promise.all(versions.map(
+          version => archiveVersionDiff(version))));
+      const textDiffed = versions
+        .then(versions => Promise.all(versions.map(
+          version => archiveVersionDiff(version, 'text_only'))));
 
-      return Promise.all([diffed, archived]).then(() => versions);
+      return Promise.all([diffed, textDiffed, archived]).then(() => versions);
     });
     return Promise.all(versionsForPages).then(flatten);
   })
