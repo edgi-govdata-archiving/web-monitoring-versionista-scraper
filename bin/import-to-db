@@ -97,6 +97,10 @@ function importJsonFile (filePath, callback) {
 
       console.log(`Completed ${versionsTotal} versions.`);
     }),
+    // Unfortunately, pump only waits for the last stream's write end to finish,
+    // not for it to close or for its read end to end. This passthrough stream
+    // ensures the stream above finishes all its work before the callback :/
+    stream.PassThrough({objectMode: true}),
     callback
   );
 }
@@ -140,7 +144,10 @@ function mapStream (mapper) {
     objectMode: true,
     transform (data, encoding, callback) {
       try {
-        this.push(mapper(data));
+        const result = mapper(data);
+        if (result != null) {
+          this.push(result);
+        }
         callback();
       }
       catch (error) {
