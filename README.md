@@ -63,7 +63,9 @@ $ scrape-versionista --help
 
 - `--save-content` If set, the raw HTML of each captured version will also be saved. Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
 
-- `--save-diffs` If set, the HTML of diffs between a version and its previous version will also be saved.Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
+- `--save-diffs` If set, the HTML of diffs between a version and its previous version will also be saved. Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
+
+- `--latest-version-only` If set, only the latest version (of the versions matching --after/--before times) for each page is captured.
 
 - `--group-by-site` If set, a separate output file will be generated for each site. Files are placed in the same directory as `--output`, so the actual filename specified in `--output` will never be created.
 
