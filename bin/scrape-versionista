@@ -45,6 +45,10 @@ Options:
   --save-diffs           Save HTML of diffs between versions. Outputs in the
                          same fashion as --save-content.
   --relative-paths PATH  Make file paths in output data relative to this path.
+  --group-by-site        Instead of one output file, create one file per site.
+                         Like other output, the files will be created in the
+                         same directory as --output. Note this means the actual
+                         filename specified in --output will never be written.
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
@@ -344,21 +348,58 @@ let versions = pages
     return versions;
   });
 
-versions
-  .then(() => sites)
-  .then(data => formatter(data, {
-    account: args['--account-name'],
-    includeDiffs: args['--save-diffs'],
-    includeContent: args['--save-content']
-  }))
-  .then(formatted => {
-    if (args['--output']) {
-      return writeFile(path.basename(args['--output']), formatted);
-    }
-    else {
-      process.stdout.write(formatted);
-    }
-  })
+
+let files;
+const completeData = versions.then(() => sites);
+
+if (args['--output'] && args['--group-by-site']) {
+  files = completeData
+    // filter out sites without actual updates
+    .then(sites => sites.filter(
+      site => site.pages && site.pages.some(
+        page => page.versions && page.versions.length
+      )
+    ))
+    // format each individually
+    .then(sites => {
+      return sites.map(site => {
+        return {
+          name: site.name,
+          content: formatter([site], {
+            account: args['--account-name'],
+            includeDiffs: args['--save-diffs'],
+            includeContent: args['--save-content']
+          })
+        };
+      });
+    })
+    .then(formattedSites => {
+      const dateString = new Date(startTime).toISOString();
+      const files = formattedSites.map(site => {
+        const filename = `${site.name}_${dateString}.csv`.replace(/[:/]/g, '_');
+        return writeFile(filename, site.content);
+      });
+      return Promise.all(files);
+    });
+}
+else {
+  files = completeData
+    .then(data => formatter(data, {
+      account: args['--account-name'],
+      includeDiffs: args['--save-diffs'],
+      includeContent: args['--save-content']
+    }))
+    .then(formatted => {
+      if (args['--output']) {
+        return writeFile(path.basename(args['--output']), formatted);
+      }
+      else {
+        process.stdout.write(formatted);
+      }
+    });
+}
+
+files
   .catch(error => {
     logError(error);
   })
