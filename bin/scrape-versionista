@@ -49,6 +49,8 @@ Options:
                          Like other output, the files will be created in the
                          same directory as --output. Note this means the actual
                          filename specified in --output will never be written.
+  --latest-version-only  Only include the latest version for each page (within
+                         the --after/--before date range).
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
@@ -329,6 +331,12 @@ let versions = pages
     const versionsForPages = pages.map(page => {
       const versions = scraper.getVersions(page.versionistaUrl)
         .then(versions => versions.filter(isInRequestedDateRange))
+        .then(versions => {
+          if (args['--latest-version-only']) {
+            return versions.slice(-1);
+          }
+          return versions;
+        })
         .then(versions => {
           page.versions = versions;
           return versions;
