@@ -1,4 +1,4 @@
-# versoinista-edgi-node
+# web-monitoring-versionista-scraper
 
 This is a version of [versionista-outputter](https://github.com/edgi-govdata-archiving/versionista-outputter) that has been rewritten in Node.js and JSDom.
 
@@ -10,13 +10,19 @@ Why? Speed is important here. Scraping Versionista can take a *long* time. We do
 You’ll need Node.js. Then you should be able to globally install this with:
 
 ```sh
-$ npm install -g https://github.com/Mr0grog/versionista-edgi-node.git
+$ npm install -g https://github.com/edgi-govdata-archiving/web-monitoring-versionista-scraper.git
 ```
 
 Then run it like so:
 
 ```sh
 $ scrape-versionista --email EMAIL --password PASSWORD --after '2017-03-22' --format csv --output './scrape/versions.csv'
+```
+
+You can also split output into multiple files (by site) with the `--group-by-site` option:
+
+```sh
+$ scrape-versionista --email EMAIL --password PASSWORD --after '2017-03-22' --format csv --output './scrape/versions.csv' --group-by-site
 ```
 
 Alternatively, you can clone this repo, then:
@@ -58,6 +64,8 @@ $ scrape-versionista --help
 - `--save-content` If set, the raw HTML of each captured version will also be saved. Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
 
 - `--save-diffs` If set, the HTML of diffs between a version and its previous version will also be saved.Files are written to the working directory or, if `--output` is specified, the same directory as the output file.
+
+- `--group-by-site` If set, a separate output file will be generated for each site. Files are placed in the same directory as `--output`, so the actual filename specified in `--output` will never be created.
 
 
 ## Examples
