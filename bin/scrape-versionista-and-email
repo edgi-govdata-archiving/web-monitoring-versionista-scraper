@@ -1,0 +1,195 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const spawn = require('child_process').spawn;
+const fs = require('fs-promise');
+const neodoc = require('neodoc');
+const nodemailer = require('nodemailer');
+
+const args = neodoc.run(`
+Usage: scrape-versionista-and-email [options]
+
+Options:
+  -h, --help              Print this lovely help message.
+  --after HOURS           Only include versions from N hours ago. [default: 72]
+  --output DIRECTORY      Write output to this directory.
+  --email STRING          Versionista account e-mail address [env: VERSIONISTA_EMAIL]
+  --password STRING       Versionista account password [env: VERSIONISTA_PASSWORD]
+  --account-name NAME     Name to use for Versionista account in output. [env: VERSIONISTA_NAME]
+  --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
+  --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
+  --receiver-email STRING E-mail address to send results to [env: SEND_ARCHIVES_TO]
+`);
+
+const scriptsPath = __dirname;
+const outputDirectory = path.resolve(args['--output']);
+
+const versionista = {
+  email: args['--email'],
+  password: args['--password'],
+  name: args['--account-name'] || email.match(/^(.+)@/)[1]
+};
+
+const senderEmailName = 'EDGI Versionista Scraper'
+const scrapeTime = new Date();
+// Use ISO Zulu time without seconds in our time strings
+const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
+
+scrapeAccount()
+  .then(result => {
+    return compressPath(result.path).then(compressed => ({
+      text: result.text,
+      path: compressed
+    }));
+  })
+  .catch(error => error)
+  .then(sendResults)
+  .catch(error => console.error(error))
+  .then(() => run(`rm`, ['-rf', path.join(outputDirectory, '*')], {shell: true}));
+
+
+function scrapeAccount() {
+  const safeScrapeTime = timeString.replace(/:/g, '-');
+  const subdirectoryName = `${versionista.name}-${safeScrapeTime}`;
+  const directory = path.join(outputDirectory, subdirectoryName);
+  const errorFile = path.join(directory, `errors.log`);
+
+  return fs.ensureDir(directory)
+    .then(() => run(
+      path.join(scriptsPath, 'scrape-versionista'),
+      [
+        '--email', versionista.email,
+        '--password', versionista.password,
+        '--account-name', versionista.name,
+        '--after', args['--after'],
+        '--format', 'csv',
+        '--output', path.join(directory, `whatever.csv`),
+        '--errors', errorFile,
+        '--group-by-site',
+        '--latest-version-only'
+      ]
+    ))
+    .then(process => {
+      if (process.code === 0) {
+        return {
+          text: process.allIo,
+          path: directory
+        };
+      }
+
+      return fs.readFile(errorFile, 'utf8')
+        .then(errorText => {
+          const error = new Error(`Failed to scrape account ${email}`);
+          error.rawText = errorText;
+          throw error;
+        });
+    });
+}
+
+function compressPath (targetPath) {
+  const cwd = path.dirname(targetPath);
+  const inFile = path.basename(targetPath);
+  const outFile = `${inFile}.tar.gz`;
+
+  return run('tar', ['-czf', outFile, inFile], {cwd})
+    .then(process => {
+      if (process.code !== 0) {
+        throw new Error(`Failed to compress ${targetPath}: ${process.allIo}`);
+      }
+      return path.join(cwd, outFile);
+    });
+}
+
+function sendResults (result) {
+  return new Promise((resolve, reject) => {
+    const friendlyDate = timeString.replace('T', ' ').replace('Z', ' (GMT)');
+    const friendlyTime = friendlyDate.slice(11);
+
+    const message = {
+      from: `"${senderEmailName}" <${args['--sender-email']}>`,
+      to: args['--receiver-email']
+    };
+    const subjectDetails = `${versionista.name} @ ${friendlyDate}`
+    const signature = [
+      '\n\n- Your friendly scraperbot\n\n',
+      '\n\n- Your friendly scraperbot\n\n',
+      '\n\n- Mr. Scrapes\n\n'
+    ][Math.floor(Math.random() * 3)]
+
+    if (result instanceof Error) {
+      message.subject = `Error scraping ${subjectDetails}`;
+
+      const greeting = [
+        'Uhoh,',
+        'Troubles:',
+        'Problems :(',
+        '💩!'
+      ][Math.floor(Math.random() * 4)];
+
+      message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}:\n\n${result.rawText || result.message}\n${signature}`;
+    }
+    else {
+      message.subject = `Scraped ${subjectDetails}`;
+
+      const greeting = [
+        'Hi!',
+        'Howdy!',
+        'Good Morning!',
+        'Mornin’!',
+        'Hey,',
+        'Hot off the server!',
+        'Headed your way!'
+      ][Math.floor(Math.random() * 7)];
+
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}.\n\n${result.text}${signature}`;
+      message.attachments = [{path: result.path}];
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: args['--sender-email'],
+        pass: args['--sender-password']
+      }
+    });
+
+    transporter.sendMail(message, (error, result) => {
+      if (error) reject(error);
+      else resolve(result);
+    });
+  });
+}
+
+function run (command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    let allIo = '';
+    let stdout = '';
+    let stderr = '';
+
+    const child = spawn(command, args, Object.assign(options, {
+      stdio: 'pipe'
+    }))
+      .on('error', reject)
+      .on('close', code => {
+        resolve({
+          code,
+          allIo,
+          stdout,
+          stderr
+        });
+      });
+
+    child.stdout.on('data', data => {
+      allIo += data;
+      stdout += data;
+      process.stdout.write(data);
+    });
+
+    child.stderr.on('data', data => {
+      allIo += data;
+      stderr += data;
+      process.stderr.write(data);
+    });
+  });
+}
