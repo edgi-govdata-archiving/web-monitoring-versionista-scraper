@@ -51,6 +51,8 @@ Options:
                          filename specified in --output will never be written.
   --latest-version-only  Only include the latest version for each page (within
                          the --after/--before date range).
+  --skip-error-versions  Do not include versions tagged as being error pages
+                         (e.g. 403, 500, etc. response codes).
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
@@ -191,8 +193,23 @@ const isInRequestedDateRange = (testDate) => {
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
+/**
+ * Get the diff between a version and its previous version, if any.
+ * If the previous version is tagged as having an error status code (e.g. the
+ * server hosting it returned a 403, 500, etc. when scraped), this will attempt
+ * to diff between the latest earlier version that did not have an error code.
+ *
+ * @param {VersionistaVersion} version
+ * @param {String} [diffType]
+ * @returns {Promise.<DiffInfo>}
+ */
 function archiveVersionDiff (version, diffType) {
-  if (!version.diffWithPreviousUrl) {
+  let url = version.diffWithPreviousUrl;
+  if (args['--skip-error-versions']) {
+    url = version.diffWithPreviousSafeUrl || url;
+  }
+
+  if (!url) {
     return;
   }
 
@@ -202,7 +219,7 @@ function archiveVersionDiff (version, diffType) {
   const pageDirectory = `${version.siteId}-${version.pageId}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
 
-  return scraper.getVersionDiff(version.diffWithPreviousUrl, diffType)
+  return scraper.getVersionDiff(url, diffType)
     .then(diff => {
       if (diff) {
         version[fieldName] = {
@@ -334,6 +351,12 @@ let versions = pages
       const versions = scraper.getVersions(page.versionistaUrl)
         .then(versions => versions.filter(isInRequestedDateRange))
         .then(versions => {
+          if (args['--skip-error-versions']) {
+            return versions.filter(version => !version.errorCode);
+          }
+          return versions;
+        })
+        .then(versions => {
           if (args['--latest-version-only']) {
             return versions.slice(-1);
           }
@@ -353,7 +376,18 @@ let versions = pages
         .then(versions => Promise.all(versions.map(
           version => archiveVersionDiff(version, 'text_only'))));
 
-      return Promise.all([diffed, textDiffed, archived]).then(() => versions);
+      return Promise.all([diffed, textDiffed, archived])
+        .then(() => versions)
+        .then(versions => {
+          // skipping error versions might give us a version with no diff
+          // e.g. page loads, then page errors, then page loads but no change
+          // load #3 gets counted as a version (diffs w/ #2), but is same as #1
+          if (args['--skip-error-versions']) {
+            return versions
+              .filter(version => !version.diff || version.diff.length);
+          }
+          return versions;
+        });
     });
     return Promise.all(versionsForPages).then(flatten);
   })
