@@ -111,11 +111,14 @@ function sendResults (result) {
       to: args['--receiver-email']
     };
     const subjectDetails = `${versionista.name} @ ${friendlyDate}`
-    const signature = [
-      '\n\n- Your friendly scraperbot\n\n',
-      '\n\n- Your friendly scraperbot\n\n',
-      '\n\n- Mr. Scrapes\n\n'
-    ][Math.floor(Math.random() * 3)]
+    let signature = [
+      '- Your friendly scraperbot',
+      '- Your friendly scraperbot',
+      '- Mr. Scrapes',
+      '- Scrape-y McScrapesalot',
+      '- Sir Scraperbot'
+    ][Math.floor(Math.random() * 5)];
+    signature = `\n\n${signature}\n\n`;
 
     if (result instanceof Error) {
       message.subject = `Error scraping ${subjectDetails}`;
