@@ -67,7 +67,8 @@ function scrapeAccount() {
         '--output', path.join(directory, `whatever.csv`),
         '--errors', errorFile,
         '--group-by-site',
-        '--latest-version-only'
+        '--latest-version-only',
+        '--skip-error-versions'
       ]
     ))
     .then(process => {
