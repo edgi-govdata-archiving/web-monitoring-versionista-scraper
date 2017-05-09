@@ -147,6 +147,11 @@ function upload (account, callback) {
 }
 
 function importToDb (account, callback) {
+  if (!args['--db-email'] || !args['--db-password']) {
+    console.error('Nothing imported to web-monitoring-db (not configured)');
+    callback();
+  }
+
   const metadataPath = path.join(
     outputDirectory,
     account,
