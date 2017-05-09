@@ -23,6 +23,9 @@ Options:
   --google-key PATH     Google Cloud key file [env: GOOGLE_STORAGE_KEY_FILE]
   --google-bucket NAME  Google Could bucket to upload to [env: GOOGLE_BUCKET]
   --throughput NUM      Number of simultaneous uploads to allow
+  --db-email STRING     Login e-mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
+  --db-password STRING  Password for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
+  --db-url STRING       URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
 `);
 
 const scriptsPath = __dirname;
@@ -129,13 +132,47 @@ function upload (account, callback) {
   s3.on('close', code => {
     if (code == 0) {
       console.error('Successfully uploaded to S3');
+      importToDb(account, complete);
     }
-    complete(code ? 'Failed to upload to S3.' : null);
+    else {
+      complete('Failed to upload to S3');
+    }
   });
   google.on('close', code => {
     if (code == 0) {
       console.error('Successfully uploaded to Google Cloud');
     }
     complete(code ? 'Failed to upload to Google Cloud.' : null);
+  });
+}
+
+function importToDb (account, callback) {
+  if (!args['--db-email'] || !args['--db-password']) {
+    console.error('Nothing imported to web-monitoring-db (not configured)');
+    callback();
+  }
+
+  const metadataPath = path.join(
+    outputDirectory,
+    account,
+    `metadata-${timeString}.json`);
+
+  const importProcess = spawn(
+    path.join(scriptsPath, 'import-to-db'),
+    [
+      '--email', args['--db-email'],
+      '--password', args['--db-password'],
+      '--host', args['--db-url'],
+      metadataPath
+    ],
+    {
+      stdio: 'inherit'
+    });
+
+  importProcess.on('close', code => {
+    if (code == 0) {
+      console.error(`Successfully imported into ${args['--db-url']}`);
+    }
+    callback(code ? 'Failed to import to DB.' : null);
   });
 }
