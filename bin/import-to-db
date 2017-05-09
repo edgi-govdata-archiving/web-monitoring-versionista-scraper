@@ -23,6 +23,7 @@ Options:
   --host HOST      Alternate host name for web-monitoring-db. Use this to send
                    data to an alternate instance of the DB.
                    [default: https://web-monitoring-db.herokuapp.com/]
+                   [env: WEB_MONITORING_URL]
   --chunk SIZE     Send versions in chunks of this size. [default: 1000]
 `);
 
