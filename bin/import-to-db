@@ -24,6 +24,9 @@ Options:
                    data to an alternate instance of the DB.
                    [default: https://web-monitoring-db.herokuapp.com/]
                    [env: WEB_MONITORING_URL]
+  --bucket BUCKET  Amazon S3 bucket that is hosting raw version data.
+                   [default: edgi-versionista-archive]
+                   [env: AWS_S3_BUCKET]
   --chunk SIZE     Send versions in chunks of this size. [default: 1000]
 `);
 
@@ -36,6 +39,7 @@ const chunkSize = args['--chunk'];
 const versionFilePaths = args['<paths>'];
 const email = args['--email'];
 const password = args['--password'];
+const bucket = args['--bucket'];
 const startDate = Date.now();
 
 function importableVersion (version) {
@@ -46,7 +50,7 @@ function importableVersion (version) {
       `${version.siteId}-${version.pageId}`,
       path.basename(version.filePath)
     ].join('/');
-    s3Url = `https://edgi-versionista-archive.s3.amazonaws.com/${s3Path}`;
+    s3Url = `https://${bucket}.s3.amazonaws.com/${s3Path}`;
   }
 
   return {
