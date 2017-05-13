@@ -35,7 +35,7 @@ Unlike Amazon services, Google Cloud requires a key *file* for managing credenti
 2. Select “IAM & Admin” → “Service Accounts” from the left-hand menu
 3. Click “Create Service Account” at the top of the screen
     1. Give your service account any name you like
-    2. Under “Role,” select “Storage” → Storage Object Admin”
+    2. Under “Role,” select “Storage” → “Storage Object Admin”
     3. Check “Furnish a new private key” and select “JSON” for the key type
     4. Click “create”
     5. A JSON file should automatically be downloaded
