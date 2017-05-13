@@ -83,4 +83,7 @@ Finally, set up `cron` to run the above script. Run `crontab -e` to configure cr
 
 That runs the `cron-archive` script every 30 minutes for each account. For the “versionista1” account, it runs on the hour and at half-past; for the “versionista2” account, at a quarter after and a quarter to the hour.
 
-That’s it!
+
+## Updating/Upgrading
+
+Updating the deployment is simplistic: just SSH into the server, go to the `web-monitoring-versionista-scraper` directory, and `git pull`. This isn’t an ideal process (it’s not very secure), but is what we currently have.
