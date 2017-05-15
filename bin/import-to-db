@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const stream = require('stream');
+const url = require('url');
 const neodoc = require('neodoc');
 const parallel = require('parallel-transform');
 const pump = require('pump');
@@ -30,15 +31,13 @@ Options:
   --chunk SIZE     Send versions in chunks of this size. [default: 1000]
 `);
 
-if (!args['--host'].endsWith('/')) {
-  args['--host'] += '/';
-}
-
-const dbUrl = `${args['--host']}api/v0/imports`
+const dbUrl = composeUrl(
+  args['--host'],
+  args['--email'],
+  args['--password'],
+  'api/v0/imports');
 const chunkSize = args['--chunk'];
 const versionFilePaths = args['<paths>'];
-const email = args['--email'];
-const password = args['--password'];
 const bucket = args['--bucket'];
 const startDate = Date.now();
 
@@ -207,11 +206,25 @@ function chunkedObjectStream (chunkSize = Infinity) {
   });
 }
 
+function composeUrl (sourceUrl, user, password, tail = '') {
+  const parsedUrl = url.parse(sourceUrl);
+
+  if (!parsedUrl.auth) {
+    parsedUrl.auth = `${user}:${password}`;
+  }
+
+  if (!parsedUrl.pathname.endsWith('/')) {
+    parsedUrl.pathname += '/';
+  }
+  parsedUrl.pathname += tail;
+
+  return url.format(parsedUrl);
+}
+
 function importIntoDb (versions, callback) {
   request({
     method: 'POST',
     url: dbUrl,
-    auth: {username: email, password},
     headers: {'Content-Type': 'application/x-json-stream'},
     body: versions.map(v => JSON.stringify(v)).join('\n')
   }, (error, response, rawBody) => {
@@ -230,7 +243,6 @@ function importIntoDb (versions, callback) {
       setTimeout(() => {
         request({
           url: `${dbUrl}/${importId}`,
-          auth: {username: email, password},
           json: true
         }, (error, response, body) => {
           if (error) {
