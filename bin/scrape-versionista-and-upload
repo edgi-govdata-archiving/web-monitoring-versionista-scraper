@@ -36,6 +36,11 @@ const scrapeTime = new Date();
 const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const throughput = args['--throughput'] ? (args['--throughput'] / 2) : 0;
 
+const dbUrls = (args['--db-url'] || '')
+  .split(',')
+  .map(dbUrl => dbUrl.trim())
+  .filter(dbUrl => !!dbUrl);
+
 archiveAndUpload(args['--email'], args['--password'], error => {
   if (error) {
     console.error(error);
@@ -132,7 +137,7 @@ function upload (account, callback) {
   s3.on('close', code => {
     if (code == 0) {
       console.error('Successfully uploaded to S3');
-      importToDb(account, complete);
+      importToDbs(account, complete);
     }
     else {
       complete('Failed to upload to S3');
@@ -146,12 +151,26 @@ function upload (account, callback) {
   });
 }
 
-function importToDb (account, callback) {
-  if (!args['--db-email'] || !args['--db-password']) {
+function importToDbs (account, callback) {
+  let remaining = dbUrls.length;
+
+  if (remaining === 0) {
     console.error('Nothing imported to web-monitoring-db (not configured)');
-    callback();
+    return callback();
   }
 
+  for (let dbUrl of dbUrls) {
+    importToDb(dbUrl, account, error => {
+      remaining--;
+      if (remaining === 0 || error) {
+        remaining = 0;
+        callback(error);
+      }
+    });
+  }
+}
+
+function importToDb (dbUrl, account, callback) {
   const metadataPath = path.join(
     outputDirectory,
     account,
@@ -162,7 +181,7 @@ function importToDb (account, callback) {
     [
       '--email', args['--db-email'],
       '--password', args['--db-password'],
-      '--host', args['--db-url'],
+      '--host', dbUrl,
       metadataPath
     ],
     {
@@ -171,8 +190,8 @@ function importToDb (account, callback) {
 
   importProcess.on('close', code => {
     if (code == 0) {
-      console.error(`Successfully imported into ${args['--db-url']}`);
+      console.error(`Successfully imported into ${dbUrl}`);
     }
-    callback(code ? 'Failed to import to DB.' : null);
+    callback(code ? `Failed to import to DB ${dbUrl}.` : null);
   });
 }
