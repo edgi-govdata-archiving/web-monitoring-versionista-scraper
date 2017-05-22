@@ -189,9 +189,14 @@ function importToDb (dbUrl, account, callback) {
     });
 
   importProcess.on('close', code => {
+    const loggableUrl = urlWithoutAuth(dbUrl);
     if (code == 0) {
-      console.error(`Successfully imported into ${dbUrl}`);
+      console.error(`Successfully imported into ${loggableUrl}`);
     }
-    callback(code ? `Failed to import to DB ${dbUrl}.` : null);
+    callback(code ? `Failed to import to DB ${loggableUrl}.` : null);
   });
+}
+
+function urlWithoutAuth (url) {
+  return url.replace(/^(\w+:\/\/)([^\/]+@)/, '$1');
 }
