@@ -28,7 +28,7 @@ const outputDirectory = path.resolve(args['--output']);
 const versionista = {
   email: args['--email'],
   password: args['--password'],
-  name: args['--account-name'] || email.match(/^(.+)@/)[1]
+  name: args['--account-name'] || args['--email'].match(/^(.+)@/)[1]
 };
 
 const senderEmailName = 'EDGI Versionista Scraper'
@@ -81,7 +81,8 @@ function scrapeAccount() {
 
       return fs.readFile(errorFile, 'utf8')
         .then(errorText => {
-          const error = new Error(`Failed to scrape account ${email}`);
+          const error = new Error(
+            `Failed to scrape account ${versionista.email}`);
           error.rawText = errorText;
           throw error;
         });
