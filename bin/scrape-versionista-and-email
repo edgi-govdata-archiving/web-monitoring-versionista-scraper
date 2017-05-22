@@ -28,7 +28,7 @@ const outputDirectory = path.resolve(args['--output']);
 const versionista = {
   email: args['--email'],
   password: args['--password'],
-  name: args['--account-name'] || email.match(/^(.+)@/)[1]
+  name: args['--account-name'] || args['--email'].match(/^(.+)@/)[1]
 };
 
 const senderEmailName = 'EDGI Versionista Scraper'
@@ -81,7 +81,8 @@ function scrapeAccount() {
 
       return fs.readFile(errorFile, 'utf8')
         .then(errorText => {
-          const error = new Error(`Failed to scrape account ${email}`);
+          const error = new Error(
+            `Failed to scrape account ${versionista.email}`);
           error.rawText = errorText;
           throw error;
         });
@@ -115,9 +116,8 @@ function sendResults (result) {
     let signature = [
       '- Your friendly scraperbot',
       '- Your friendly scraperbot',
-      '- Mr. Scrapes',
       '- Scrape-y McScrapesalot',
-      '- Sir Scraperbot'
+      '- Your faithful Scraperbot'
     ][Math.floor(Math.random() * 5)];
     signature = `\n\n${signature}\n\n`;
 
