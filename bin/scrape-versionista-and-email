@@ -113,30 +113,30 @@ function sendResults (result) {
       to: args['--receiver-email']
     };
     const subjectDetails = `${versionista.name} @ ${friendlyDate}`
-    let signature = [
+    let signature = randomItem([
       '- Your friendly scraperbot',
       '- Your friendly scraperbot',
       '- Scrape-y McScrapesalot',
       '- Your faithful Scraperbot'
-    ][Math.floor(Math.random() * 5)];
+    ]);
     signature = `\n\n${signature}\n\n`;
 
     if (result instanceof Error) {
       message.subject = `Error scraping ${subjectDetails}`;
 
-      const greeting = [
+      const greeting = randomItem([
         'Uhoh,',
         'Troubles:',
         'Problems :(',
         '💩!'
-      ][Math.floor(Math.random() * 4)];
+      ]);
 
       message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}:\n\n${result.rawText || result.message}\n${signature}`;
     }
     else {
       message.subject = `Scraped ${subjectDetails}`;
 
-      const greeting = [
+      const greeting = randomItem([
         'Hi!',
         'Howdy!',
         'Good Morning!',
@@ -144,7 +144,7 @@ function sendResults (result) {
         'Hey,',
         'Hot off the server!',
         'Headed your way!'
-      ][Math.floor(Math.random() * 7)];
+      ]);
 
       message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
@@ -196,4 +196,8 @@ function run (command, args, options = {}) {
       process.stderr.write(data);
     });
   });
+}
+
+function randomItem (items) {
+  return items[Math.floor(Math.random() * items.length)]
 }
