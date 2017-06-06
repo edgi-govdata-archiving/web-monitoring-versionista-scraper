@@ -36,6 +36,7 @@ const scrapeTime = new Date();
 // Use ISO Zulu time without seconds in our time strings
 const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 
+let removeOutput = true;
 scrapeAccount()
   .then(result => {
     return compressPath(result.path).then(compressed => ({
@@ -43,10 +44,18 @@ scrapeAccount()
       path: compressed
     }));
   })
-  .catch(error => error)
+  .catch(error => {
+    // keep output for debugging if there was an error
+    removeOutput = false;
+    return error;
+  })
   .then(sendResults)
   .catch(error => console.error(error))
-  .then(() => run(`rm`, ['-rf', path.join(outputDirectory, '*')], {shell: true}));
+  .then(() => {
+    if (removeOutput) {
+      run(`rm`, ['-rf', path.join(outputDirectory, '*')], {shell: true});
+    }
+  });
 
 
 function scrapeAccount() {
@@ -131,7 +140,7 @@ function sendResults (result) {
         '💩!'
       ]);
 
-      message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}:\n\n${result.rawText || result.message}\n${signature}`;
+      message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of versions out of ${versionista.name} at ${friendlyTime}:\n\n${result.rawText || result.message}\n\n${result.stack}\n${signature}`;
     }
     else {
       message.subject = `Scraped ${subjectDetails}`;
