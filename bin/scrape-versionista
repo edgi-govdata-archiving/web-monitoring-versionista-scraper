@@ -55,6 +55,10 @@ Options:
                          (e.g. 403, 500, etc. response codes) in primary output.
                          Error versions will be in a separate file alongside
                          primary output: error-versions.csv|json
+  --parallel NUMBER      Number of parallel connections to Versionista allowed.
+  --pause-every NUMBER   Pause briefly after this many requests to Versionista.
+  --pause-time MS        Milliseconds to pause for (see --pause-every)
+  --rate NUMBER          Maximum number of requests per minute (unimplemented!)
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
@@ -166,9 +170,20 @@ function minimum (items, getValue = Number) {
   return smallestItem;
 }
 
+const clientOptions = {
+  maxSockets: args['--parallel'] && parseInt(args['--parallel'], 10),
+  sleepEvery: args['--pause-every'] && parseInt(args['--pause-every'], 10),
+  sleepFor: args['--pause-time'] && parseInt(args['--pause-time'], 10),
+  maxPerMinute: args['--rate'] && parseFloat(args['--rate'])
+};
+Object.keys(clientOptions).forEach(key => {
+  if (clientOptions[key] == null) { delete clientOptions[key]; }
+});
+
 const scraper = new Versionista({
   email: args['--email'],
-  password: args['--password']
+  password: args['--password'],
+  client: clientOptions
 });
 
 const isAfterMinimumDate = (testDate) => {
