@@ -58,7 +58,7 @@ Options:
   --parallel NUMBER      Number of parallel connections to Versionista allowed.
   --pause-every NUMBER   Pause briefly after this many requests to Versionista.
   --pause-time MS        Milliseconds to pause for (see --pause-every)
-  --rate NUMBER          Maximum number of requests per minute (unimplemented!)
+  --rate NUMBER          Maximum number of requests per minute
 `);
 
 args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
