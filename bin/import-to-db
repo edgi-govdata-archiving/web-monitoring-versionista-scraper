@@ -72,7 +72,9 @@ function importableVersion (version) {
       diff_with_previous_url: version.diffWithPreviousUrl,
       diff_with_first_url: version.diffWithFirstUrl,
       diff_hash: version.diff && version.diff.hash,
-      diff_length: version.diff && version.diff.length
+      diff_length: version.diff && version.diff.length,
+      diff_text_hash: version.textDiff && version.textDiff.hash,
+      diff_text_length: version.textDiff && version.textDiff.length
     }
   };
 }
