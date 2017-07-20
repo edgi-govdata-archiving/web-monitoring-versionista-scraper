@@ -20,6 +20,10 @@ Options:
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
   --receiver-email STRING E-mail address to send results to [env: SEND_ARCHIVES_TO]
+  --scrape-parallel NUM     Number of parallel connections to Versionista allowed.
+  --scrape-pause-every NUM  Pause briefly after this many requests to Versionista.
+  --scrape-pause-time MS    Milliseconds to pause for (see --scrape-pause-every)
+  --scrape-rate NUMBER      Maximum number of requests per minute
 `);
 
 const scriptsPath = __dirname;
@@ -64,6 +68,15 @@ function scrapeAccount() {
   const directory = path.join(outputDirectory, subdirectoryName);
   const errorFile = path.join(directory, `errors.log`);
 
+  const timingOptions = ['parallel', 'pause-every', 'pause-time', 'rate']
+    .reduce((result, name) => {
+      const value = args[`--scrape-${name}`];
+      if (value) {
+        result.push(`--${name}`, value);
+      }
+      return result;
+    }, []);
+
   return fs.ensureDir(directory)
     .then(() => run(
       path.join(scriptsPath, 'scrape-versionista'),
@@ -78,7 +91,7 @@ function scrapeAccount() {
         '--group-by-site',
         '--latest-version-only',
         '--skip-error-versions'
-      ]
+      ].concat(timingOptions)
     ))
     .then(process => {
       if (process.code === 0) {
