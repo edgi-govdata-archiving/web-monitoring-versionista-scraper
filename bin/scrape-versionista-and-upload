@@ -26,6 +26,10 @@ Options:
   --db-email STRING     Login e-mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
   --db-password STRING  Password for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
   --db-url STRING       URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
+  --scrape-parallel NUM     Number of parallel connections to Versionista allowed.
+  --scrape-pause-every NUM  Pause briefly after this many requests to Versionista.
+  --scrape-pause-time MS    Milliseconds to pause for (see --scrape-pause-every)
+  --scrape-rate NUMBER      Maximum number of requests per minute
 `);
 
 const scriptsPath = __dirname;
@@ -61,6 +65,15 @@ function archiveAndUpload (email, password, callback) {
       return callback(error);
     }
 
+    const timingOptions = ['parallel', 'pause-every', 'pause-time', 'rate']
+      .reduce((result, name) => {
+        const value = args[`--scrape-${name}`];
+        if (value) {
+          result.push(`--${name}`, value);
+        }
+        return result;
+      }, []);
+
     const scraper = spawn(
       path.join(scriptsPath, 'scrape-versionista'),
       [
@@ -74,7 +87,7 @@ function archiveAndUpload (email, password, callback) {
         '--relative-paths', path.join(outputDirectory),
         '--save-content',
         '--save-diffs'
-      ],
+      ].concat(timingOptions),
       {
         stdio: 'inherit'
       });
