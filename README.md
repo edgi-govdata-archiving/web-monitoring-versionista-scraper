@@ -89,7 +89,7 @@ $ scrape-versionista --after '2017-02-01' --before '2017-03-01' --format csv --o
 Specifying time as hours ago instead of a date:
 
 ```sh
-# Startign 5 hours ago
+# Starting 5 hours ago
 $ scrape-versionista --after 5
 # Decimals are accepted, so you can start 30 minutes ago, too
 $ scrape-versionista --after 0.5
