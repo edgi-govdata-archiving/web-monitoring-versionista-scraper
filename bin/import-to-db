@@ -68,7 +68,7 @@ function importableVersion (version) {
       version_id: version.versionId,
       url: version.url,
       has_content: version.hasContent,
-      errorCode: version.is404Page ? '404' : version.errorCode,
+      error_code: version.is404Page ? '404' : version.errorCode,
       diff_with_previous_url: version.diffWithPreviousUrl,
       diff_with_first_url: version.diffWithFirstUrl,
       diff_hash: version.diff && version.diff.hash,
