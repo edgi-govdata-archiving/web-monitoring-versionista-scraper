@@ -21,7 +21,6 @@ Options:
   --db-url STRING         URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
                           [default: https://api.monitoring.envirodatagov.org/]
   --output DIRECTORY      Write output to this directory.
-  --account-name NAME     Name to use for Versionista account in output. [env: VERSIONISTA_NAME]
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
   --receiver-email STRING E-mail address to send results to [env: SEND_ARCHIVES_TO]
@@ -114,8 +113,23 @@ function getSiteUpdates () {
       pages.forEach(page => {
         const latest = page.versions[page.versions.length - 1];
         page.latest = latest;
-        const group = latest.source_metadata.errorCode ? 'errors' : page.site;
+        const group = isError(latest) ? 'errors' : page.site;
         pagesBySite.add(group, page);
+
+        // Check whether there was also a non-error version that we should show
+        if (isError(latest)) {
+          for (let i = page.versions.length - 2; i >= 0; i--) {
+            const version = page.versions[i];
+            if (!isError(version)) {
+              const nonErrorPage = Object.assign({}, page, {latest: version});
+              pagesBySite.add(page.site, nonErrorPage);
+              break;
+            }
+          }
+        }
+        else {
+          pagesBySite.add(page.site, page);
+        }
       });
       return {
         pagesBySite,
@@ -124,6 +138,11 @@ function getSiteUpdates () {
         queryDuration: Date.now() - scrapeTime.getTime()
       };
     });
+}
+
+function isError (version) {
+  return version.source_metadata.errorCode
+    || version.source_metadata.error_code;
 }
 
 function writeCsvsForSites (pagesBySite) {
