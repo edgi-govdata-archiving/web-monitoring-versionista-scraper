@@ -262,6 +262,7 @@ function archiveVersionDiff (version, diffType) {
       // ask for the diff, so this is "ok"
       // otherwise, log error but continue working
       if (error.code !== 'VERSIONISTA:INVALID_URL') {
+        logError(`Error capturing diff. url: '${url}', diffType: ${diffType}`);
         logError(error);
       }
     })
