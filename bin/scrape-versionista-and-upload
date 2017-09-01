@@ -12,6 +12,7 @@ Usage: scrape-versionista-and-upload [options] --output DIRECTORY
 Options:
   -h, --help            Print this lovely help message.
   --after HOURS         Only include versions from N hours ago. [default: 1]
+  --before HOURS        Only include versions before N hours ago. [default: 0]
   --output DIRECTORY    Write output to this directory.
   --email STRING        Versionista account e-mail address [env: VERSIONISTA_EMAIL]
   --password STRING     Versionista account password [env: VERSIONISTA_PASSWORD]
@@ -81,6 +82,7 @@ function archiveAndUpload (email, password, callback) {
         '--password', password,
         '--account-name', account,
         '--after', args['--after'],
+        '--before', args['--before'],
         '--format', 'json-stream',
         '--output', path.join(mainDirectory, `metadata-${timeString}.json`),
         '--errors', path.join(mainDirectory, `errors-${timeString}.log`),
