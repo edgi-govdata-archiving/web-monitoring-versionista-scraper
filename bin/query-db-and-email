@@ -18,6 +18,7 @@ Usage: query-db-and-email [options]
 Options:
   -h, --help              Print this lovely help message.
   --after HOURS           Only include versions from N hours ago. [default: 72]
+  --before HOURS          Only include versions from before N hours ago.
   --db-url STRING         URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
                           [default: https://api.monitoring.envirodatagov.org/]
   --output DIRECTORY      Write output to this directory.
@@ -56,6 +57,23 @@ else {
     throw new Error('--after should be and ISO 8601 date or a number of hours');
   }
   startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+}
+
+let endTime = scrapeTime;
+if (args['--before']) {
+  if (typeof args['--before'] === 'string' && args['--before'].includes('-')) {
+    endTime = new Date(args['--before']);
+    if (isNaN(endTime)) {
+      throw new Error('--before should be and ISO 8601 date or a number of hours');
+    }
+  }
+  else {
+    const hours = Number(args['--before'])
+    if (isNaN(hours)) {
+      throw new Error('--before should be and ISO 8601 date or a number of hours');
+    }
+    endTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  }
 }
 
 class SetMap extends Map {
@@ -105,7 +123,7 @@ let pageIndex = 1;
 function getSiteUpdates () {
   const pagesBySite = new SetMap();
   return getAllResults('api/v0/pages', {
-    capture_time: `${startTime.toISOString()}..${scrapeTime.toISOString()}`,
+    capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
     include_versions: 'true',
     source_type: 'versionista'
   })
