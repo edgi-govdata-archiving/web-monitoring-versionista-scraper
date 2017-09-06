@@ -145,9 +145,6 @@ function getSiteUpdates () {
             }
           }
         }
-        else {
-          pagesBySite.add(page.site, page);
-        }
       });
       return {
         pagesBySite,
