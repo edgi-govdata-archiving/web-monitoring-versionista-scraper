@@ -118,8 +118,6 @@ Completed in ${result.queryDuration / 1000} seconds`,
     }
   });
 
-let pageIndex = 1;
-
 function getSiteUpdates () {
   const pagesBySite = new SetMap();
   return getAllResults('api/v0/pages', {
@@ -169,6 +167,7 @@ function writeCsvsForSites (pagesBySite) {
 }
 
 function csvStringForPages (pages) {
+  let pageIndex = 1;
   const rows = pages.map(page => {
     const version = page.latest;
     const metadata = version.source_metadata;
