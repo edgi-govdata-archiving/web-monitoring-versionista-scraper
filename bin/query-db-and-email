@@ -1,0 +1,333 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const spawn = require('child_process').spawn;
+const fs = require('fs-promise');
+const neodoc = require('neodoc');
+const nodemailer = require('nodemailer');
+const request = require('request');
+const stream = require('stream');
+const formatCsv = require('../lib/formatters/csv');
+
+const args = neodoc.run(`
+Query our database for updated pages/versions and send an e-mail with details.
+
+Usage: query-db-and-email [options]
+
+Options:
+  -h, --help              Print this lovely help message.
+  --after HOURS           Only include versions from N hours ago. [default: 72]
+  --before HOURS          Only include versions from before N hours ago.
+  --db-url STRING         URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
+                          [default: https://api.monitoring.envirodatagov.org/]
+  --output DIRECTORY      Write output to this directory.
+  --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
+  --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
+  --receiver-email STRING E-mail address to send results to [env: SEND_ARCHIVES_TO]
+`);
+
+const scriptsPath = __dirname;
+const outputParent = path.resolve(args['--output']);
+const dbUrl = (args['--db-url'])
+  .split(',')
+  .map(dbUrl => dbUrl.trim())
+  .filter(dbUrl => !!dbUrl)
+  .map(dbUrl => dbUrl.endsWith('/') ? dbUrl : (dbUrl + '/'))
+  [0];
+
+const senderEmailName = 'EDGI Versionista Scraper'
+const scrapeTime = new Date();
+// Use ISO Zulu time without seconds in our time strings
+const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
+const safeScrapeTime = timeString.replace(/:/g, '-');
+const outputDirectory = path.join(outputParent, `versionista-${safeScrapeTime}`);
+
+
+let startTime;
+if (typeof args['--after'] === 'string' && args['--after'].includes('-')) {
+  startTime = new Date(args['--after']);
+  if (isNaN(startTime)) {
+    throw new Error('--after should be and ISO 8601 date or a number of hours');
+  }
+}
+else {
+  const hours = Number(args['--after'])
+  if (isNaN(hours)) {
+    throw new Error('--after should be and ISO 8601 date or a number of hours');
+  }
+  startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+}
+
+let endTime = scrapeTime;
+if (args['--before']) {
+  if (typeof args['--before'] === 'string' && args['--before'].includes('-')) {
+    endTime = new Date(args['--before']);
+    if (isNaN(endTime)) {
+      throw new Error('--before should be and ISO 8601 date or a number of hours');
+    }
+  }
+  else {
+    const hours = Number(args['--before'])
+    if (isNaN(hours)) {
+      throw new Error('--before should be and ISO 8601 date or a number of hours');
+    }
+    endTime = new Date(Date.now() - hours * 60 * 60 * 1000);
+  }
+}
+
+class SetMap extends Map {
+  get (key) {
+    let value = super.get(key);
+    if (!value) {
+      value = new Set();
+      this.set(key, value);
+    }
+    return value;
+  }
+
+  add (key, item) {
+    return this.get(key).add(item);
+  }
+}
+
+let removeOutput = true;
+fs.ensureDir(outputDirectory)
+  .then(() => getSiteUpdates())
+  .then(result => writeCsvsForSites(result.pagesBySite).then(() => result))
+  .then(result => {
+    return compressPath(outputDirectory).then(compressed => ({
+      text: `Found ${result.siteCount} sites with updates
+Found ${result.pageCount} pages with updates
+Completed in ${result.queryDuration / 1000} seconds`,
+      path: compressed
+    }));
+  })
+  .catch(error => {
+    // keep output for debugging if there was an error
+    removeOutput = false;
+    // write to console, but also send in e-mail
+    console.error(error)
+    return error;
+  })
+  .then(sendResults)
+  .catch(error => console.error(error))
+  .then(() => {
+    if (removeOutput) {
+      run(`rm`, ['-rf', path.join(outputParent, '*')], {shell: true});
+    }
+  });
+
+function getSiteUpdates () {
+  const pagesBySite = new SetMap();
+  return getAllResults('api/v0/pages', {
+    capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
+    include_versions: 'true',
+    source_type: 'versionista'
+  })
+    .then(pages => {
+      pages.forEach(page => {
+        const latest = page.versions[page.versions.length - 1];
+        page.latest = latest;
+        const group = isError(latest) ? 'errors' : page.site;
+        pagesBySite.add(group, page);
+
+        // Check whether there was also a non-error version that we should show
+        if (isError(latest)) {
+          for (let i = page.versions.length - 2; i >= 0; i--) {
+            const version = page.versions[i];
+            if (!isError(version)) {
+              const nonErrorPage = Object.assign({}, page, {latest: version});
+              pagesBySite.add(page.site, nonErrorPage);
+              break;
+            }
+          }
+        }
+      });
+      return {
+        pagesBySite,
+        pageCount: pages.length,
+        siteCount: pagesBySite.size,
+        queryDuration: Date.now() - scrapeTime.getTime()
+      };
+    });
+}
+
+function isError (version) {
+  return version.source_metadata.errorCode
+    || version.source_metadata.error_code;
+}
+
+function writeCsvsForSites (pagesBySite) {
+  return Promise.all([...pagesBySite].map(([site, pages]) => {
+    const csv = csvStringForPages([...pages]);
+    const filename = `${site}_${safeScrapeTime}.csv`.replace(/[:/]/g, '_');
+    return fs.writeFile(path.join(outputDirectory, filename), csv);
+  }));
+}
+
+function csvStringForPages (pages) {
+  let pageIndex = 1;
+  const rows = pages.map(page => {
+    const version = page.latest;
+    const metadata = version.source_metadata;
+    return [
+      pageIndex++,
+      version.uuid,
+      // TODO: format
+      timeString,
+      page.agency,
+      page.site,
+      page.title,
+      page.url,
+      `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
+      metadata.diff_with_previous_url,
+      metadata.diff_with_first_url,
+      // TODO: format
+      formatCsv.formatDate(new Date(version.capture_time)),
+      '----',
+      metadata.diff_length,
+      metadata.diff_hash,
+      metadata.diff_text_length,
+      metadata.diff_text_hash
+    ];
+  });
+  return formatCsv.toCsvString([formatCsv.headers, ...rows]);
+}
+
+function compressPath (targetPath) {
+  const cwd = path.dirname(targetPath);
+  const inFile = path.basename(targetPath);
+  const outFile = `${inFile}.tar.gz`;
+
+  return run('tar', ['-czf', outFile, inFile], {cwd})
+    .then(process => {
+      if (process.code !== 0) {
+        throw new Error(`Failed to compress ${targetPath}: ${process.allIo}`);
+      }
+      return path.join(cwd, outFile);
+    });
+}
+
+function sendResults (result) {
+  return new Promise((resolve, reject) => {
+    const friendlyDate = timeString.replace('T', ' ').replace('Z', ' (GMT)');
+    const friendlyTime = friendlyDate.slice(11);
+
+    const message = {
+      from: `"${senderEmailName}" <${args['--sender-email']}>`,
+      to: args['--receiver-email']
+    };
+    const subjectDetails = `All Versionista Accounts @ ${friendlyDate}`
+    let signature = randomItem([
+      '- Your friendly scraperbot',
+      '- Your friendly scraperbot',
+      '- Scrape-y McScrapesalot',
+      '- Your faithful Scraperbot'
+    ]);
+    signature = `\n\n${signature}\n\n`;
+
+    if (result instanceof Error) {
+      message.subject = `[Experimental DB Query] Error scraping ${subjectDetails}`;
+
+      const greeting = randomItem([
+        'Uhoh,',
+        'Troubles:',
+        'Problems :(',
+        '💩!'
+      ]);
+
+      message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}:\n\n${result.rawText || result.message}\n\n${result.stack}\n${signature}`;
+    }
+    else {
+      message.subject = `[Experimental DB Query] Scraped ${subjectDetails}`;
+
+      const greeting = randomItem([
+        'Hi!',
+        'Howdy!',
+        'Good Morning!',
+        'Mornin’!',
+        'Hey,',
+        'Hot off the server!',
+        'Headed your way!'
+      ]);
+
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}.\n\n${result.text}${signature}`;
+      message.attachments = [{path: result.path}];
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: args['--sender-email'],
+        pass: args['--sender-password']
+      }
+    });
+
+    transporter.sendMail(message, (error, result) => {
+      if (error) reject(error);
+      else resolve(result);
+    });
+  });
+}
+
+function run (command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    let allIo = '';
+    let stdout = '';
+    let stderr = '';
+
+    const child = spawn(command, args, Object.assign(options, {
+      stdio: 'pipe'
+    }))
+      .on('error', reject)
+      .on('close', code => {
+        resolve({
+          code,
+          allIo,
+          stdout,
+          stderr
+        });
+      });
+
+    child.stdout.on('data', data => {
+      allIo += data;
+      stdout += data;
+      process.stdout.write(data);
+    });
+
+    child.stderr.on('data', data => {
+      allIo += data;
+      stderr += data;
+      process.stderr.write(data);
+    });
+  });
+}
+
+function randomItem (items) {
+  return items[Math.floor(Math.random() * items.length)]
+}
+
+// Get all pages of a result set from the given API endpoint and query data
+function getAllResults (apiPath, qs) {
+  return new Promise((resolve, reject) => {
+    const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
+    request.get(url, {qs}, function(error, response) {
+      if (error) return reject(error);
+
+      const body = JSON.parse(response.body);
+
+      if (response.statusCode !== 200) {
+        return reject(body.errors[0]);
+      };
+
+      // Concatenate the next page onto the end of this one if there is one.
+      let result = body.data;
+      if (body.links.next) {
+        result = getAllResults(body.links.next)
+          .then(nextPages => body.data.concat(nextPages));
+      }
+      resolve(result);
+    });
+  });
+}
