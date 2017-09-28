@@ -449,7 +449,7 @@ let versions = pages
 
 
 let files;
-const completeData = versions.then(() => sites);
+const completeData = versions.then(() => sites)
 
 if (args['--output'] && args['--group-by-site']) {
   files = completeData
