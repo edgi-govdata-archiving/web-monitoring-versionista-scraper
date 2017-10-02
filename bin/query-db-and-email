@@ -193,7 +193,7 @@ function csvStringForPages (pages) {
       ];
     })
     .sort(formatCsv.sortCsv)
-    .map((value, index) => {
+    .map((value, index) => { //sets Index column
       value[0] = index + 1;
       return value;
     });
