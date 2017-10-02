@@ -167,31 +167,36 @@ function writeCsvsForSites (pagesBySite) {
 }
 
 function csvStringForPages (pages) {
-  let pageIndex = 1;
-  const rows = pages.map(page => {
-    const version = page.latest;
-    const metadata = version.source_metadata;
-    return [
-      pageIndex++,
-      version.uuid,
-      // TODO: format
-      timeString,
-      page.agency,
-      page.site,
-      page.title,
-      page.url,
-      `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
-      metadata.diff_with_previous_url,
-      metadata.diff_with_first_url,
-      // TODO: format
-      formatCsv.formatDate(new Date(version.capture_time)),
-      '----',
-      metadata.diff_length,
-      metadata.diff_hash,
-      metadata.diff_text_length,
-      metadata.diff_text_hash
-    ];
-  });
+  const rows = pages
+    .map(page => {
+      const version = page.latest;
+      const metadata = version.source_metadata;
+      return [
+        '',
+        version.uuid,
+        // TODO: format
+        timeString,
+        page.agency,
+        page.site,
+        page.title,
+        page.url,
+        `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
+        metadata.diff_with_previous_url,
+        metadata.diff_with_first_url,
+        // TODO: format
+        formatCsv.formatDate(new Date(version.capture_time)),
+        '----',
+        metadata.diff_length,
+        metadata.diff_hash,
+        metadata.diff_text_length,
+        metadata.diff_text_hash
+      ];
+    })
+    .sort(formatCsv.sortCsv)
+    .map((value, index) => {
+      value[0] = index + 1;
+      return value;
+    });
   return formatCsv.toCsvString([formatCsv.headers, ...rows]);
 }
 
