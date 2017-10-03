@@ -192,12 +192,8 @@ function csvStringForPages (pages) {
         metadata.diff_text_hash
       ];
     })
-    .sort(formatCsv.sortCsv)
-    .map((value, index) => { //sets Index column
-      value[0] = index + 1;
-      return value;
-    });
-  return formatCsv.toCsvString([formatCsv.headers, ...rows]);
+
+  return formatCsv.toCsvString([formatCsv.headers, ...(formatCsv.sortRows(rows))]);
 }
 
 function compressPath (targetPath) {
