@@ -25,6 +25,9 @@ Options:
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
   --receiver-email STRING E-mail address to send results to [env: SEND_ARCHIVES_TO]
+  --chunk-size NUMBER     Number of records to fetch at a time [default: 100]
+  --chunk-delay SECONDS   Number of seconds to wait between chunks [default: 0]
+  --debug                 Print debug messages
 `);
 
 const scriptsPath = __dirname;
@@ -76,6 +79,9 @@ if (args['--before']) {
   }
 }
 
+const chunkDelay = Math.max(0, Number(args['--chunk-delay'])) * 1000;
+const chunkSize = Number(args['--chunk-size']) || 100;
+
 class SetMap extends Map {
   get (key) {
     let value = super.get(key);
@@ -123,7 +129,8 @@ function getSiteUpdates () {
   return getAllResults('api/v0/pages', {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
     include_versions: 'true',
-    source_type: 'versionista'
+    source_type: 'versionista',
+    chunk_size: chunkSize
   })
     .then(pages => {
       pages.forEach(page => {
@@ -309,6 +316,12 @@ function randomItem (items) {
   return items[Math.floor(Math.random() * items.length)]
 }
 
+const chunk_expression = /chunk=(\d+)/;
+
+function getChunk (url) {
+  return (url.match(chunk_expression) || [])[1] || 1;
+}
+
 // Get all pages of a result set from the given API endpoint and query data
 function getAllResults (apiPath, qs) {
   return new Promise((resolve, reject) => {
@@ -316,19 +329,38 @@ function getAllResults (apiPath, qs) {
     request.get(url, {qs}, function(error, response) {
       if (error) return reject(error);
 
-      const body = JSON.parse(response.body);
+      let body;
+      try {
+        body = JSON.parse(response.body);
+      }
+      catch (error) {
+        throw new Error(
+          `Could not parse response for ${url}\n\n${response.body}`);
+      }
 
       if (response.statusCode !== 200) {
         return reject(body.errors[0]);
       };
 
-      // Concatenate the next page onto the end of this one if there is one.
-      let result = body.data;
-      if (body.links.next) {
-        result = getAllResults(body.links.next)
-          .then(nextPages => body.data.concat(nextPages));
+      if (args['--debug']) {
+        console.log(`Got ${getChunk(apiPath)} of ${getChunk(body.links.last)}`);
       }
-      resolve(result);
+
+      // Concatenate the next page onto the end of this one if there is one.
+      if (body.links.next) {
+        const next = () => resolve(
+          getAllResults(body.links.next)
+            .then(nextPages => body.data.concat(nextPages)));
+
+        if (chunkDelay) {
+          setTimeout(next, chunkDelay);
+        }
+        else {
+          next();
+        }
+        return;
+      }
+      resolve(body.data);
     });
   });
 }
