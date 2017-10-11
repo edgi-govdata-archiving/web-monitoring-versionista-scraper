@@ -134,14 +134,14 @@ function getSiteUpdates () {
   })
     .then(pages => {
       pages.forEach(page => {
-        const latest = page.versions[page.versions.length - 1];
+        const latest = page.versions[0];
         page.latest = latest;
         const group = isError(latest) ? 'errors' : page.site;
         pagesBySite.add(group, page);
 
         // Check whether there was also a non-error version that we should show
         if (isError(latest)) {
-          for (let i = page.versions.length - 2; i >= 0; i--) {
+          for (let i = 1, len = page.versions.length; i < len; i++) {
             const version = page.versions[i];
             if (!isError(version)) {
               const nonErrorPage = Object.assign({}, page, {latest: version});
