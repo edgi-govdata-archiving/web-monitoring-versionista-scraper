@@ -277,62 +277,25 @@ function archivePageVersions (page, versions) {
   }
 
   const siteId = versions[0].siteId;
-  const unmatchedVersions = new Set(downloadableVersions);
-
   const pageDirectory = `${siteId}-${page.id}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
 
   return fs.ensureDir(pagePath)
-    .then(() => new Promise((resolve, reject) => {
-      scraper.getVersionArchiveEntries(page.versionistaUrl)
-        .on('error', reject)
-        .pipe(stream.Transform({
-          objectMode: true,
-          transform: function (entry, encoding, callback) {
-            entry.resume();
-            // Frustratingly, the timestamps on the files do not
-            // match the timestamps on the version records. So...
-            // find the closest matching timestamp, but also require
-            // it to be within a narrow threshold.
-            const allowableTimeframe = 30 * 60 * 1000;
-            const fileVersion = minimum(unmatchedVersions, version => {
-              const timeApart = Math.abs(version.date - entry.date);
-              return (timeApart < allowableTimeframe) ? timeApart : null;
-            });
+    .then(() => {
+      const downloads = downloadableVersions.map(version => {
+        return scraper.getVersionRawContent(version.url)
+          .then(content => {
+            let name = `version-${version.versionId}${content.extension}`;
+            let outputPath = path.join(pagePath, name);
 
-            let outputPath = path.join(pagePath, entry.path);
-            if (fileVersion) {
-              let name = `version-${fileVersion.versionId}${entry.extension}`;
-              outputPath = path.join(pagePath, name);
+            version.filePath = getCleanedPath(outputPath);
+            version.hash = content.hash;
 
-              unmatchedVersions.delete(fileVersion);
-              fileVersion.filePath = getCleanedPath(outputPath);
-              entry.on('hash', hash => fileVersion.hash = hash.toString('hex'));
-            }
-            else if (args['--save-content'] !== 'all') {
-              entry.autodrain();
-              return callback();
-            }
-
-            entry
-              .pipe(fs.createWriteStream(outputPath))
-              .on('error', callback)
-              .on('finish', callback);
-          }
-        }))
-        .resume()
-        .on('error', reject)
-        .on('end', () => {
-          if (unmatchedVersions.size > 0) {
-            const ids = Array.from(unmatchedVersions).map(v => v.versionId);
-            return reject(new Error(`${unmatchedVersions.size} versions not found in downloaded archive: ${ids} (Page ${page.id})`));
-          }
-          resolve();
-        })
-    }))
-    .catch(error => {
-      // emit messages here and allow the process to continue
-      logError(error);
+            return fs.writeFile(outputPath, content.body);
+          })
+          .catch(logError);
+      });
+      return Promise.all(downloads);
     });
 }
 
