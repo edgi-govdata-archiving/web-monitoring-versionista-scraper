@@ -1,0 +1,557 @@
+#!/usr/bin/env node
+'use strict';
+
+const path = require('path');
+const stream = require('stream');
+const fs = require('fs-promise');
+const mkdirp = require('mkdirp');
+const neodoc = require('neodoc');
+const Versionista = require('..');
+const flatten = require('../lib/flatten');
+require('../lib/polyfill');
+
+const formatters = {
+  csv: require('../lib/formatters/csv.js'),
+  'json-stream': require('../lib/formatters/json-stream.js'),
+  json: require('../lib/formatters/json.js'),
+};
+
+const args = neodoc.run(`
+Usage: get-versionista-page-chunk [options]
+
+Options:
+  -h, --help             Print this lovely help message.
+  --email ADDRESS        E-mail address of Versionista Account. You can also use
+                         an env var instead: VERSIONISTA_EMAIL
+  --password PASSWORD    Password of Versionista Account. You can also use an
+                         env var instead: VERSIONISTA_PASSWORD
+  --account-name NAME    A name to use for the versionista account instead of
+                         the e-mail address in output data. If not specified,
+                         the email will be used. [env: VERSIONISTA_NAME]
+  --after DATE           Only include versions after this date.
+                         An ISO8601 date string like '2017-03-01T00:00:00Z'
+                         Or a number, representing hours before the current time
+  --before DATE          Only include versions created before this time.
+                         An ISO8601 date string like '2017-03-01T00:00:00Z'
+                         Or a number, representing hours before the current time
+  --format FORMAT        Output format (csv|json|json-stream) [default: json]
+  --output PATH          Write output to this file instead of STDOUT.
+  --errors PATH          Write error summary to this file instead of STDERR.
+  --save-content         Save raw HTML of each version. Files are written to the
+                         working directory or, if --output is specified, the
+                         same directory as the output file.
+  --save-all-content     Like --save-content, but saves ALL versions, regardless
+                         of --before/--after date criteria.
+  --save-diffs           Save HTML of diffs between versions. Outputs in the
+                         same fashion as --save-content.
+  --relative-paths PATH  Make file paths in output data relative to this path.
+  --group-by-site        Instead of one output file, create one file per site.
+                         Like other output, the files will be created in the
+                         same directory as --output. Note this means the actual
+                         filename specified in --output will never be written.
+  --latest-version-only  Only include the latest version for each page (within
+                         the --after/--before date range).
+  --skip-error-versions  Do not include versions tagged as being error pages
+                         (e.g. 403, 500, etc. response codes) in primary output.
+                         Error versions will be in a separate file alongside
+                         primary output: error-versions.csv|json
+  --parallel NUMBER      Number of parallel connections to Versionista allowed.
+  --pause-every NUMBER   Pause briefly after this many requests to Versionista.
+  --pause-time MS        Milliseconds to pause for (see --pause-every)
+  --rate NUMBER          Maximum number of requests per minute
+  --candidate-pages PATH JSON file with potential pages to archive.
+  --start-from INDEX     Index in chunk to start from. [default: 0]
+`);
+
+args['--email'] = args['--email'] || process.env.VERSIONISTA_EMAIL;
+args['--password'] = args['--password'] || process.env.VERSIONISTA_PASSWORD;
+if (!args['--email'] || !args['--password']) {
+  console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+}
+
+if (!args['--account-name']) {
+  args['--account-name'] = args['--email'];
+}
+
+if (args['--save-all-content']) {
+  args['--save-content'] = 'all';
+}
+
+if (args['--before']) {
+  if (typeof args['--before'] === 'number') {
+    const millisAgo = args['--before'] * 60 * 60 * 1000;
+    args['--before'] = new Date(Date.now() - millisAgo);
+  }
+  else {
+    args['--before'] = new Date(args['--before']);
+    if (isNaN(args['--before'])) {
+      console.error('--before must be a valid date or number.');
+      process.exit(1);
+    }
+  }
+}
+
+if (args['--after']) {
+  if (typeof args['--after'] === 'number') {
+    const millisAgo = args['--after'] * 60 * 60 * 1000;
+    args['--after'] = new Date(Date.now() - millisAgo);
+  }
+  else {
+    args['--after'] = new Date(args['--after']);
+    if (isNaN(args['--after'])) {
+      console.error('--after must be a valid date or number.');
+      process.exit(1);
+    }
+  }
+}
+
+let getCleanedPath = original => original;
+if (args['--relative-paths']) {
+  let trimPath = args['--relative-paths'];
+  getCleanedPath = original => path.relative(trimPath, original);
+}
+
+// FIXME: this should be encapsulated in a function
+let baseDirectory = process.cwd();
+if (args['--output']) {
+  baseDirectory = path.dirname(args['--output']);
+}
+
+let directoryIsReady = false;
+function writeFile (name, content, encoding = 'utf8') {
+  const filePath = path.join(baseDirectory, name);
+  const writeIt = () => fs.writeFile(filePath, content, encoding);
+
+  if (!directoryIsReady) {
+    return new Promise((resolve, reject) => {
+      mkdirp(baseDirectory, (error, created) => {
+        if (error) return reject(error);
+        directoryIsReady = true;
+        resolve(created);
+      });
+    }).then(writeIt)
+  }
+
+  return writeIt();
+}
+
+let errorStream;
+let errorCount = 0;
+function logError (error) {
+  errorCount++;
+
+  if (!errorStream) {
+    if (args['--errors']) {
+      errorStream = fs.createWriteStream(args['--errors']);
+    }
+    else {
+      errorStream = process.stderr;
+    }
+  }
+
+  errorStream.write(error.stack || error.message || error.toString());
+  errorStream.write('\n');
+}
+
+function flushErrors () {
+  if (errorStream && errorStream !== process.stderr) {
+    errorStream.end();
+  }
+}
+
+function minimum (items, getValue = Number) {
+  let smallestValue = Infinity;
+  let smallestItem = null;
+  for (let item of items) {
+    let value = getValue(item);
+    if (value != null && value < smallestValue) {
+      smallestValue = value;
+      smallestItem = item;
+    }
+  }
+  return smallestItem;
+}
+
+const clientOptions = {
+  maxSockets: args['--parallel'] && parseInt(args['--parallel'], 10),
+  sleepEvery: args['--pause-every'] && parseInt(args['--pause-every'], 10),
+  sleepFor: args['--pause-time'] && parseInt(args['--pause-time'], 10),
+  maxPerMinute: args['--rate'] && parseFloat(args['--rate'])
+};
+Object.keys(clientOptions).forEach(key => {
+  if (clientOptions[key] == null) { delete clientOptions[key]; }
+});
+
+const scraper = new Versionista({
+  email: args['--email'],
+  password: args['--password'],
+  client: clientOptions
+});
+
+const isAfterMinimumDate = (testDate) => {
+  return !args['--after'] || args['--after'] <= testDate;
+};
+
+const isBeforeMaximumDate = (testDate) => {
+  return !args['--before'] || args['--before'] >= testDate;
+};
+
+const isInRequestedDateRange = (testDate) => {
+  if (testDate instanceof Date) {
+    return isAfterMinimumDate(testDate) && isBeforeMaximumDate(testDate);
+  }
+  else if (testDate.date) {
+    return isInRequestedDateRange(testDate.date);
+  }
+  else if (testDate.lastChange) {
+    return isAfterMinimumDate(testDate.lastChange);
+  }
+  throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
+}
+
+const formatter = formatters[args['--format']] || formatters.json;
+const startTime = Date.now();
+
+/**
+ * Get the diff between a version and its previous version, if any.
+ * If the previous version is tagged as having an error status code (e.g. the
+ * server hosting it returned a 403, 500, etc. when scraped), this will attempt
+ * to diff between the latest earlier version that did not have an error code.
+ *
+ * @param {VersionistaVersion} version
+ * @param {String} [diffType]
+ * @returns {Promise.<DiffInfo>}
+ */
+function archiveVersionDiff (version, diffType) {
+  let url = version.diffWithPreviousUrl;
+  if (args['--skip-error-versions']) {
+    url = version.diffWithPreviousSafeUrl || url;
+  }
+
+  if (!url) {
+    return;
+  }
+
+  const fileSuffix = (diffType === 'text_only') ? '-text' : '';
+  const fieldName = (diffType === 'text_only') ? 'textDiff' : 'diff';
+
+  const pageDirectory = `${version.siteId}-${version.pageId}`;
+  const pagePath = path.join(baseDirectory, pageDirectory);
+
+  return scraper.getVersionDiff(url, diffType)
+    .then(diff => {
+      if (diff) {
+        version[fieldName] = {
+          hash: diff.hash,
+          length: diff.length
+        };
+
+        if (args['--save-diffs']) {
+          const fullDiffPath = path.join(
+            pagePath,
+            `diff-${version.versionId}${fileSuffix}.html`
+          );
+          version[fieldName].path = getCleanedPath(fullDiffPath);
+          return fs.ensureDir(pagePath)
+            .then(() => fs.writeFile(fullDiffPath, diff.content))
+            .then(() => version);
+        }
+      }
+    })
+    .catch(error => {
+      // it’s possible for Versionista to consign a version to
+      // the ether between the time we detect the version and
+      // ask for the diff, so this is "ok"
+      // otherwise, log error but continue working
+      if (error.code !== 'VERSIONISTA:INVALID_URL') {
+        logError(`Error capturing diff. url: '${url}', diffType: ${diffType}`);
+        logError(error);
+      }
+    })
+    .then(() => version);
+}
+
+function archivePageVersions (page, versions) {
+  const downloadableVersions = versions.filter(version => version.hasContent);
+
+  if (!downloadableVersions.length || !args['--save-content']) {
+    return Promise.resolve(page);
+  }
+
+  const siteId = versions[0].siteId;
+  const pageDirectory = `${siteId}-${page.id}`;
+  const pagePath = path.join(baseDirectory, pageDirectory);
+
+  return fs.ensureDir(pagePath)
+    .then(() => {
+      const downloads = downloadableVersions.map(version => {
+        return scraper.getVersionRawContent(version.url)
+          .then(content => {
+            let name = `version-${version.versionId}${content.extension}`;
+            let outputPath = path.join(pagePath, name);
+
+            version.filePath = getCleanedPath(outputPath);
+            version.hash = content.hash;
+
+            return fs.writeFile(outputPath, content.body);
+          })
+          .catch(logError);
+      });
+      return Promise.all(downloads);
+    });
+}
+
+
+// let sites = scraper.getSites()
+//   .then(sites => sites.filter(isInRequestedDateRange))
+//   .then(sites => {
+//     console.error(`Found ${sites.length} sites with potential updates`);
+//     return sites;
+//   });
+
+// let pages = sites
+//   .then(sites => {
+//     // TODO: remove need to create references between pages and sites
+//     // return Promise.all(sites.map(site => scraper.getPages(site.url)));
+//     const pagesForSites = sites.map(site => {
+//       return scraper.getPages(site.url)
+//         .then(pages => pages.filter(isInRequestedDateRange))
+//         .then(pages => {
+//           site.pages = pages;
+//           return pages;
+//         });
+//     });
+//     return Promise.all(pagesForSites).then(flatten);
+//   })
+//   .then(pages => {
+//     console.error(`Found ${pages.length} pages with potential updates`);
+//     return pages;
+//   });
+
+
+// const PAGE_CHUNK_SIZE = 500;
+// const files = pages
+//   .then(pages => {
+//     const totalPages = pages.length;
+//     const chunks = [];
+//     let index = 0;
+//     while (index < totalPages) {
+//       const startIndex = index;
+//       index = index + PAGE_CHUNK_SIZE;
+//       chunks.push(pages.slice(startIndex, index));
+//     }
+//     return chunks;
+//   })
+//   .then(pageSets => {
+//     return Promise.all(pageSets.map((pages, index) => {
+//       const formatted = JSON.stringify(pages);
+//       const fileName = `pages-${args['--account-name']}-${index}.json`;
+//       return writeFile(fileName, formatted);
+//     }));
+//   });
+
+
+
+
+// let pages = fs.readFile(args['--candidate-pages'], 'utf8')
+//   .then(data => JSON.parse(data))
+//   .then(pages => {
+//     const startIndex = Number(args['--start-from']);
+//     return pages.slice(startIndex);
+//   });
+
+
+
+const sites = fs.readFile(args['--candidate-pages'], 'utf8')
+  .then(data => JSON.parse(data));
+
+const pages = sites
+  .then(sites => {
+    return flatten(sites.map(site => site.pages));
+  })
+  .then(pages => {
+    const startIndex = Number(args['--start-from']);
+    return pages.slice(startIndex);
+  });
+
+let totalErrorVersions = 0;
+
+let completed = 0;
+let versions = pages
+  .then(pages => {
+    const versionsForPages = pages.map(page => {
+      const filterLatestIfRequested = versions => {
+        if (args['--latest-version-only']) {
+            return versions.slice(-1);
+          }
+          return versions;
+      };
+      const onlyMeaningfulDiffs = versions => {
+        // skipping error versions might give us a version with no diff
+        // e.g. page loads, then page errors, then page loads but no change
+        // load #3 gets counted as a version (diffs w/ #2), but is same as #1
+        if (args['--skip-error-versions']) {
+          return versions
+            .filter(version => !version.diff || version.diff.length);
+        }
+        return versions;
+      }
+
+      const pageVersions = scraper.getVersions(page.versionistaUrl)
+        .then(versions => versions.filter(isInRequestedDateRange));
+
+      // Note the flipped order of filtering latest between errors and
+      // non-errors -- we don't want any errors if they are not the latest, but
+      // for non-errors, we want the latest that is not an error.
+      const errorVersions = pageVersions
+        .then(filterLatestIfRequested)
+        .then(versions => {
+          if (args['--skip-error-versions']) {
+            return versions.filter(version => version.errorCode);
+          }
+          return [];
+        });
+
+      const safeVersions = pageVersions
+        .then(versions => {
+          if (args['--skip-error-versions']) {
+            return versions.filter(version => !version.errorCode);
+          }
+          return versions;
+        })
+        .then(filterLatestIfRequested);
+
+      const updatedVersions = Promise.all([safeVersions, errorVersions])
+        .then(([safes, errors]) => {
+          const allVersions = safes.concat(errors);
+
+          const archived = archivePageVersions(page, allVersions);
+          const diffed = Promise.all(allVersions.map(
+            version => archiveVersionDiff(version)));
+          const textDiffed = Promise.all(allVersions.map(
+            version => archiveVersionDiff(version, 'text_only')));
+
+          return Promise.all([archived, diffed, textDiffed])
+            .then(() => [safes, errors]);
+        });
+
+      updatedVersions
+        .then(([safes, errors]) => safes)
+        .then(onlyMeaningfulDiffs)
+        .then(versions => {
+          page.versions = versions;
+        });
+
+      updatedVersions
+        .then(([safes, errors]) => errors)
+        .then(onlyMeaningfulDiffs)
+        .then(versions => {
+          totalErrorVersions += versions.length;
+        });
+
+      return updatedVersions
+        .then(([safes, errors]) => safes.concat(errors))
+        .then(result => {
+          completed++;
+          console.error(`${completed}: Done with ${page.url}`);
+          console.error(`    ${result.length} versions`);
+          return result;
+        });
+    });
+    return Promise.all(versionsForPages).then(flatten);
+  })
+  .then(versions => {
+    console.error(`Found ${versions.length} versions with updates`);
+    return versions;
+  });
+
+
+let files;
+const completeData = versions.then(() => sites);
+
+if (args['--output'] && args['--group-by-site']) {
+  files = completeData
+    // filter out sites without actual updates
+    .then(sites => sites.filter(
+      site => site.pages && site.pages.some(
+        page => page.versions && page.versions.length
+      )
+    ))
+    // format each individually
+    .then(sites => {
+      return sites.map(site => {
+        return {
+          name: site.name,
+          content: formatter([site], {
+            account: args['--account-name'],
+            includeDiffs: args['--save-diffs'],
+            includeContent: args['--save-content']
+          })
+        };
+      });
+    })
+    .then(formattedSites => {
+      const dateString = new Date(startTime).toISOString();
+      const files = formattedSites.map(site => {
+        const filename = `${site.name}_${dateString}.csv`.replace(/[:/]/g, '_');
+        return writeFile(filename, site.content);
+      });
+      return Promise.all(files);
+    });
+}
+else {
+  files = completeData
+    .then(data => formatter(data, {
+      account: args['--account-name'],
+      includeDiffs: args['--save-diffs'],
+      includeContent: args['--save-content']
+    }))
+    .then(formatted => {
+      if (args['--output']) {
+        return writeFile(path.basename(args['--output']), formatted);
+      }
+      else {
+        process.stdout.write(formatted);
+      }
+    });
+}
+
+if (args['--skip-error-versions']) {
+  const errorVersionsFile = completeData
+    .then(data => formatter(data, {
+      account: args['--account-name'],
+      includeDiffs: args['--save-diffs'],
+      includeContent: args['--save-content'],
+      versionType: 'errorVersions'
+    }))
+    .then(formatted => {
+      if (!totalErrorVersions) {
+        return;
+      }
+
+      if (args['--output']) {
+        const extension = args['--format'] === 'csv' ? 'csv' : 'json';
+        return writeFile(`error-versions.${extension}`, formatted);
+      }
+      else {
+        process.stdout.write('\n\nERROR VERSIONS:\n---------------\n');
+        process.stdout.write(formatted);
+      }
+    });
+
+  files = Promise.all([files, errorVersionsFile]);
+}
+
+files
+  .catch(error => {
+    logError(error);
+  })
+  .then(() => {
+    const seconds = Math.round((Date.now() - startTime) / 1000);
+    console.error(`Completed in ${seconds} seconds`);
+    if (errorCount) {
+      console.error(`  with ${errorCount} errors`);
+    }
+    flushErrors();
+    process.exit(errorCount ? 1 : 0);
+  });
