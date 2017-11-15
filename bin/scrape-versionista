@@ -352,6 +352,14 @@ let versions = pages
       }
 
       const pageVersions = scraper.getVersions(page.versionistaUrl)
+        // Log errors, but do not fail if no date could be found for a version.
+        .then(versions => versions.filter(version => {
+          if (!version.date) {
+            logError(`No date found for version: ${JSON.stringify(version)}`);
+            return false;
+          }
+          return true;
+        }))
         .then(versions => versions.filter(isInRequestedDateRange));
 
       // Note the flipped order of filtering latest between errors and
