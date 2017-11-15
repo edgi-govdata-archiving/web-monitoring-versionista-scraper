@@ -194,18 +194,22 @@ const isBeforeMaximumDate = (testDate) => {
   return !args['--before'] || args['--before'] >= testDate;
 };
 
+/**
+ * Test whether a date object or object with a date attached (e.g. site, page,
+ * version) is within the requested timeframe. Note that this *will* return
+ * `true` if the object is undated (that is, it has a field for the date, but
+ * that field is not filled in).
+ * @param {Date|VersionistaVersion|VersionistaPage|VersionistaSite} testDate
+ */
 const isInRequestedDateRange = (testDate) => {
   if (testDate instanceof Date) {
     return isAfterMinimumDate(testDate) && isBeforeMaximumDate(testDate);
   }
-  else if (testDate.date) {
-    return isInRequestedDateRange(testDate.date);
+  else if ('date' in testDate) {
+    return testDate.date ? isInRequestedDateRange(testDate.date) : true;
   }
-  else if (testDate.lastChange) {
-    return isAfterMinimumDate(testDate.lastChange);
-  }
-  else if (testDate.lastChange === null) {
-    return true;
+  else if ('lastChange' in testDate) {
+    return testDate.lastChange ? isAfterMinimumDate(testDate.lastChange) : true;
   }
   throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
 }
