@@ -204,6 +204,9 @@ const isInRequestedDateRange = (testDate) => {
   else if (testDate.lastChange) {
     return isAfterMinimumDate(testDate.lastChange);
   }
+  else if (testDate.lastChange === null) {
+    return true;
+  }
   throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
 }
 
