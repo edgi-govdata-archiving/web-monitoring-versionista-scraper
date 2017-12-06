@@ -22,7 +22,7 @@ Source the appropriate environment file for the Versionista account you need to 
 
 ```sh
 source .env.versionista1
-./bin/get-versionista-metadata --after '2017-10-09T02:00:00Z' --before '2017-10-18T00:00:00Z' --output /data/versionista-backfill/xxx --errors /data/versionista-backfill/errors-$VERSIONISTA_NAME.log --relative-paths /data/versionista-backfill/ --save-content --save-diffs --parallel 3 --pause-time 10000 --format json-stream
+./bin/get-versionista-metadata --after '2017-10-09T02:00:00Z' --before '2017-10-18T00:00:00Z' --output /data/versionista-backfill/xxx --errors /data/versionista-backfill/errors-$VERSIONISTA_NAME.log --parallel 3 --pause-time 10000
 ```
 
 You should now see a set of files in `/data/versionista-backfill` named like `pages-versionista1-0.json` with increasing numbers on the end. Make sure there were no errors (output in files named `errors-versionista1.log`).
@@ -45,11 +45,11 @@ CHUNK=0
 echo '' >> /data/versionista-backfill/$VERSIONISTA_NAME/metadata-chunk-$CHUNK.json
 ```
 
-You should now have a file and directory structure in `/data/versionista-backfill/versionista1` that resembles what you’d get when running the normal `scrape-versionista` script:
+You should now have a file and directory structure in `/data/versionista-backfill/versionista1` (if your sourced `.env.versionista1` as in the example, otherwise `/data/versionista-backfill/WHATEVER` depending on your environment variables) that resembles what you’d get when running the normal `scrape-versionista` script:
 
 ```
 /data/versionista-backfill
-└─┬ /versionista1
+└─┬ /versionista1 # or whatever $VERSIONISTA_NAME was set to
   ├─┬ /96855-7670814
   │ ├── diff-13191115.html
   │ ├── diff-13191115-text.html
