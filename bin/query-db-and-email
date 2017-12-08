@@ -38,6 +38,7 @@ const dbUrl = (args['--db-url'])
   .filter(dbUrl => !!dbUrl)
   .map(dbUrl => dbUrl.endsWith('/') ? dbUrl : (dbUrl + '/'))
   [0];
+const dbCredentials = getCredentialsFromUrl(dbUrl);
 
 const senderEmailName = 'EDGI Versionista Scraper'
 const scrapeTime = new Date();
@@ -322,11 +323,29 @@ function getChunk (url) {
   return (url.match(chunk_expression) || [])[1] || 1;
 }
 
+function getCredentialsFromUrl (url) {
+  const matchedCredentials = url.match(/^https?:\/\/([^/@]+):([^/@]+)@/);
+
+  if (matchedCredentials) {
+    return {
+      username: decodeURIComponent(matchedCredentials[1]),
+      password: decodeURIComponent(matchedCredentials[2])
+    };
+  }
+
+  return null;
+}
+
 // Get all pages of a result set from the given API endpoint and query data
 function getAllResults (apiPath, qs) {
+  const requestOptions = {qs};
+  if (dbCredentials) {
+    requestOptions.auth = dbCredentials;
+  }
+
   return new Promise((resolve, reject) => {
     const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    request.get(url, {qs}, function(error, response) {
+    request.get(url, requestOptions, function(error, response) {
       if (error) return reject(error);
 
       let body;
