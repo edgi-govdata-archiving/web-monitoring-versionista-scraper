@@ -214,6 +214,16 @@ const isInRequestedDateRange = (testDate) => {
   throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
 }
 
+/**
+ * Test whether a page might possibly contain some versions based on its
+ * `totalVersions` field. If we can determine it has no versions, there's no
+ * reason to scrape it. Will return `true` if `totalVersions` is unknown.
+ * @param {VersionistaPage} page
+ * @returns {boolean}
+ */
+const mayHaveVersions = (page) =>
+  Number.isNaN(page.totalVersions) || page.totalVersions > 0;
+
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
 
@@ -320,6 +330,7 @@ let pages = sites
     // return Promise.all(sites.map(site => scraper.getPages(site.url)));
     const pagesForSites = sites.map(site => {
       return scraper.getPages(site.url)
+        .then(pages => pages.filter(mayHaveVersions))
         .then(pages => pages.filter(isInRequestedDateRange))
         .then(pages => {
           site.pages = pages;
