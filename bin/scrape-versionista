@@ -194,18 +194,35 @@ const isBeforeMaximumDate = (testDate) => {
   return !args['--before'] || args['--before'] >= testDate;
 };
 
+/**
+ * Test whether a date object or object with a date attached (e.g. site, page,
+ * version) is within the requested timeframe. Note that this *will* return
+ * `true` if the object is undated (that is, it has a field for the date, but
+ * that field is not filled in).
+ * @param {Date|VersionistaVersion|VersionistaPage|VersionistaSite} testDate
+ */
 const isInRequestedDateRange = (testDate) => {
   if (testDate instanceof Date) {
     return isAfterMinimumDate(testDate) && isBeforeMaximumDate(testDate);
   }
-  else if (testDate.date) {
-    return isInRequestedDateRange(testDate.date);
+  else if ('date' in testDate) {
+    return testDate.date ? isInRequestedDateRange(testDate.date) : true;
   }
-  else if (testDate.lastChange) {
-    return isAfterMinimumDate(testDate.lastChange);
+  else if ('lastChange' in testDate) {
+    return testDate.lastChange ? isAfterMinimumDate(testDate.lastChange) : true;
   }
   throw new Error(`Cannot apply date filter to: ${JSON.stringify(testDate)}`);
 }
+
+/**
+ * Test whether a page might possibly contain some versions based on its
+ * `totalVersions` field. If we can determine it has no versions, there's no
+ * reason to scrape it. Will return `true` if `totalVersions` is unknown.
+ * @param {VersionistaPage} page
+ * @returns {boolean}
+ */
+const mayHaveVersions = (page) =>
+  Number.isNaN(page.totalVersions) || page.totalVersions > 0;
 
 const formatter = formatters[args['--format']] || formatters.json;
 const startTime = Date.now();
@@ -313,6 +330,7 @@ let pages = sites
     // return Promise.all(sites.map(site => scraper.getPages(site.url)));
     const pagesForSites = sites.map(site => {
       return scraper.getPages(site.url)
+        .then(pages => pages.filter(mayHaveVersions))
         .then(pages => pages.filter(isInRequestedDateRange))
         .then(pages => {
           site.pages = pages;
@@ -349,6 +367,14 @@ let versions = pages
       }
 
       const pageVersions = scraper.getVersions(page.versionistaUrl)
+        // Log errors, but do not fail if no date could be found for a version.
+        .then(versions => versions.filter(version => {
+          if (!version.date) {
+            logError(`No date found for version: ${JSON.stringify(version)}`);
+            return false;
+          }
+          return true;
+        }))
         .then(versions => versions.filter(isInRequestedDateRange));
 
       // Note the flipped order of filtering latest between errors and
