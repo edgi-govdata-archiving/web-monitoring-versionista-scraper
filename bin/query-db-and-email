@@ -21,6 +21,8 @@ Options:
   --before HOURS          Only include versions from before N hours ago.
   --db-url STRING         URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
                           [default: https://api.monitoring.envirodatagov.org/]
+  --ui-url STRING         URL for web-monitoring-ui instance [env: WEB_MONITORING_UI_URL]
+                          [default: https://monitoring.envirodatagov.org/]
   --output DIRECTORY      Write output to this directory.
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
@@ -39,6 +41,7 @@ const dbUrl = (args['--db-url'])
   .map(dbUrl => dbUrl.endsWith('/') ? dbUrl : (dbUrl + '/'))
   [0];
 const dbCredentials = getCredentialsFromUrl(dbUrl);
+const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
 
 const senderEmailName = 'EDGI Versionista Scraper'
 const scrapeTime = new Date();
@@ -188,9 +191,9 @@ function csvStringForPages (pages) {
         page.site,
         page.title,
         page.url,
-        `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
-        metadata.diff_with_previous_url,
-        metadata.diff_with_first_url,
+        `${uiUrl}page/${page.uuid}/`, //`https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
+        `${uiUrl}page/${page.uuid}/..${version.uuid}`, //metadata.diff_with_previous_url,
+        '-', //metadata.diff_with_first_url,
         // TODO: format
         formatCsv.formatDate(new Date(version.capture_time)),
         '----',
