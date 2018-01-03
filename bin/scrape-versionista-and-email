@@ -13,6 +13,7 @@ Usage: scrape-versionista-and-email [options]
 Options:
   -h, --help              Print this lovely help message.
   --after HOURS           Only include versions from N hours ago. [default: 72]
+  --before HOURS          Only include versions before N hours ago. [default: 0]
   --output DIRECTORY      Write output to this directory.
   --email STRING          Versionista account e-mail address [env: VERSIONISTA_EMAIL]
   --password STRING       Versionista account password [env: VERSIONISTA_PASSWORD]
@@ -85,6 +86,7 @@ function scrapeAccount() {
         '--password', versionista.password,
         '--account-name', versionista.name,
         '--after', args['--after'],
+        '--before', args['--before'],
         '--format', 'csv',
         '--output', path.join(directory, `whatever.csv`),
         '--errors', errorFile,
