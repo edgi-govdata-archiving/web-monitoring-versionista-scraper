@@ -293,6 +293,9 @@ function sendResults (result) {
     }
     else {
       message.subject = `[Experimental DB Query] Scraped ${subjectDetails}`;
+      if (linkToVersionista) {
+        message.subject += ' [with Versionista links]'
+      }
 
       const greeting = randomItem([
         'Hi!',
@@ -304,7 +307,8 @@ function sendResults (result) {
         'Headed your way!'
       ]);
 
-      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}.\n\n${result.text}${signature}`;
+      const linkDestination = linkToVersionista ? 'Versionista' : 'the Web Monitoring UI';
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
     }
 
