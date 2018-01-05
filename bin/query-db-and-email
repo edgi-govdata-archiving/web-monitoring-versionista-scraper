@@ -134,10 +134,10 @@ function createViewUrl (page, toVersion, fromVersion, useVersionista) {
   if (useVersionista != null ? useVersionista : linkToVersionista) {
     const metadata = (toVersion || page.latest).source_metadata;
     if (fromVersion) {
-      metadata.diff_with_first_url;
+      return metadata.diff_with_first_url;
     }
     else if (toVersion) {
-      metadata.diff_with_previous_url;
+      return metadata.diff_with_previous_url;
     }
     return `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`;
   }
@@ -219,8 +219,8 @@ function writeCsvsForSites (pagesBySite) {
 function csvStringForPages (pages) {
   const rows = pages
     .map(page => {
-      const earliest = page.earliest;
-      const version = page.latest;
+      const earliest = page.earliest || {uuid: '', metadata: {}};
+      const version = page.latest || {uuid: '', metadata: {}};
       const metadata = version.source_metadata;
       return [
         '',
