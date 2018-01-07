@@ -21,6 +21,9 @@ Options:
   --before HOURS          Only include versions from before N hours ago.
   --db-url STRING         URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
                           [default: https://api.monitoring.envirodatagov.org/]
+  --ui-url STRING         URL for web-monitoring-ui instance [env: WEB_MONITORING_UI_URL]
+                          [default: https://monitoring.envirodatagov.org/]
+  --link-to-versionista   Create view/diff links to Versionista instead of Web-Monitoring
   --output DIRECTORY      Write output to this directory.
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
@@ -39,6 +42,8 @@ const dbUrl = (args['--db-url'])
   .map(dbUrl => dbUrl.endsWith('/') ? dbUrl : (dbUrl + '/'))
   [0];
 const dbCredentials = getCredentialsFromUrl(dbUrl);
+const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
+const linkToVersionista = args['--link-to-versionista'];
 
 const senderEmailName = 'EDGI Versionista Scraper'
 const scrapeTime = new Date();
@@ -114,16 +119,36 @@ Completed in ${result.queryDuration / 1000} seconds`,
     // keep output for debugging if there was an error
     removeOutput = false;
     // write to console, but also send in e-mail
-    console.error(error)
+    console.error(error.stack || error)
     return error;
   })
   .then(sendResults)
-  .catch(error => console.error(error))
+  .catch(error => console.error(error.stack || error))
   .then(() => {
     if (removeOutput) {
       run(`rm`, ['-rf', path.join(outputParent, '*')], {shell: true});
     }
   });
+
+function createViewUrl (page, toVersion, fromVersion, useVersionista) {
+  if (useVersionista != null ? useVersionista : linkToVersionista) {
+    const metadata = (toVersion || page.latest).source_metadata;
+    if (fromVersion) {
+      return metadata.diff_with_first_url;
+    }
+    else if (toVersion) {
+      return metadata.diff_with_previous_url;
+    }
+    return `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`;
+  }
+
+  let url = `${uiUrl}page/${page.uuid}/`;
+  if (toVersion) {
+    url += `${fromVersion ? fromVersion.uuid : ''}..${toVersion.uuid}`;
+  }
+
+  return url;
+}
 
 function getSiteUpdates () {
   const pagesBySite = new SetMap();
@@ -133,6 +158,22 @@ function getSiteUpdates () {
     source_type: 'versionista',
     chunk_size: chunkSize
   })
+    // Add an `earliest` property to each page with its first version
+    .then(pages => {
+      if (linkToVersionista) return pages;
+
+      return parallelMap(page => {
+        return getAllResults(`/api/v0/pages/${page.uuid}/versions`, {
+          source_type: 'versionista',
+          chunk_size: 1000
+        })
+          .then(versions => {
+            page.earliest = versions[versions.length - 1];
+            return page;
+          });
+      }, 10, pages);
+    })
+    // Group pages by site
     .then(pages => {
       pages.forEach(page => {
         const latest = page.versions[0];
@@ -152,6 +193,7 @@ function getSiteUpdates () {
           }
         }
       });
+
       return {
         pagesBySite,
         pageCount: pages.length,
@@ -177,7 +219,8 @@ function writeCsvsForSites (pagesBySite) {
 function csvStringForPages (pages) {
   const rows = pages
     .map(page => {
-      const version = page.latest;
+      const earliest = page.earliest || {uuid: '', metadata: {}};
+      const version = page.latest || {uuid: '', metadata: {}};
       const metadata = version.source_metadata;
       return [
         '',
@@ -188,12 +231,12 @@ function csvStringForPages (pages) {
         page.site,
         page.title,
         page.url,
-        `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`,
-        metadata.diff_with_previous_url,
-        metadata.diff_with_first_url,
-        // TODO: format
+        // for now, the "page view" link is always to Versionista
+        createViewUrl(page, null, null, true),
+        createViewUrl(page, version),
+        createViewUrl(page, version, earliest),
         formatCsv.formatDate(new Date(version.capture_time)),
-        '----',
+        earliest ? formatCsv.formatDate(new Date(earliest.capture_time)) : '----',
         metadata.diff_length,
         metadata.diff_hash,
         metadata.diff_text_length,
@@ -250,6 +293,9 @@ function sendResults (result) {
     }
     else {
       message.subject = `[Experimental DB Query] Scraped ${subjectDetails}`;
+      if (linkToVersionista) {
+        message.subject += ' [with Versionista links]'
+      }
 
       const greeting = randomItem([
         'Hi!',
@@ -261,7 +307,8 @@ function sendResults (result) {
         'Headed your way!'
       ]);
 
-      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}.\n\n${result.text}${signature}`;
+      const linkDestination = linkToVersionista ? 'Versionista' : 'the Web Monitoring UI';
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of Versionista versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
     }
 
@@ -381,5 +428,40 @@ function getAllResults (apiPath, qs) {
       }
       resolve(body.data);
     });
+  });
+}
+
+// Map an async transform function to each item of an array in parallel
+function parallelMap (transform, parallelOperations, data) {
+  const result = new Array(data.length);
+  let index = 0;
+  let inProgress = 0;
+
+  return new Promise((resolve, reject) => {
+    // If we have parallel work slots available, grab an item and work on it
+    const transformNextItem = () => {
+      if (inProgress >= parallelOperations) return;
+
+      if (index >= data.length) {
+        if (inProgress === 0) resolve(result);
+        return;
+      }
+
+      inProgress++;
+      const itemIndex = index++;
+      Promise.resolve(data[itemIndex])
+        .then(transform)
+        .then(output => {
+          result[itemIndex] = output;
+          inProgress--;
+          transformNextItem();
+        })
+        .catch(reject);
+    };
+
+    // Start working on as many items as possible
+    while (inProgress < parallelOperations) {
+      transformNextItem();
+    }
   });
 }
