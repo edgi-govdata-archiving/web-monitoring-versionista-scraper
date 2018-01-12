@@ -133,13 +133,17 @@ Completed in ${result.queryDuration / 1000} seconds`,
 function createViewUrl (page, toVersion, fromVersion, useVersionista) {
   if (useVersionista != null ? useVersionista : linkToVersionista) {
     const metadata = (toVersion || page.latest).source_metadata;
+    let url = `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`;
     if (fromVersion) {
-      return metadata.diff_with_first_url;
+      url = metadata.diff_with_first_url;
     }
     else if (toVersion) {
-      return metadata.diff_with_previous_url;
+      url = metadata.diff_with_previous_url;
     }
-    return `https://versionista.com/${metadata.site_id}/${metadata.page_id}/`;
+    if (!url.endsWith('/')) {
+      url = url + '/';
+    }
+    return url;
   }
 
   let url = `${uiUrl}page/${page.uuid}/`;
