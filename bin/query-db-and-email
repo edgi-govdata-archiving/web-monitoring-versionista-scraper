@@ -240,7 +240,7 @@ function csvStringForPages (pages) {
         createViewUrl(page, version),
         createViewUrl(page, version, earliest),
         formatCsv.formatDate(new Date(version.capture_time)),
-        earliest ? formatCsv.formatDate(new Date(earliest.capture_time)) : '----',
+        earliest.capture_time ? formatCsv.formatDate(new Date(earliest.capture_time)) : '----',
         metadata.diff_length,
         metadata.diff_hash,
         metadata.diff_text_length,
