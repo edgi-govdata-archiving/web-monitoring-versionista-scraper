@@ -44,6 +44,8 @@ Options:
                          of --before/--after date criteria.
   --save-diffs           Save HTML of diffs between versions. Outputs in the
                          same fashion as --save-content.
+  --skip-diffs           Do not gather any data about diffs between versions.
+                         (e.g. hashes, diff length)
   --relative-paths PATH  Make file paths in output data relative to this path.
   --group-by-site        Instead of one output file, create one file per site.
                          Like other output, the files will be created in the
@@ -238,6 +240,10 @@ const startTime = Date.now();
  * @returns {Promise.<DiffInfo>}
  */
 function archiveVersionDiff (version, diffType) {
+  if (args['--skip-diffs']) {
+    return Promise.resolve();
+  }
+
   let url = version.diffWithPreviousUrl;
   if (args['--skip-error-versions']) {
     url = version.diffWithPreviousSafeUrl || url;
