@@ -292,6 +292,9 @@ function archivePageVersions (page, versions) {
 
             version.filePath = getCleanedPath(outputPath);
             version.hash = content.hash;
+            version.length = content.length;
+            version.headers = content.headers;
+            version.contentType = content.headers['content-type'];
 
             return fs.writeFile(outputPath, content.body);
           })
