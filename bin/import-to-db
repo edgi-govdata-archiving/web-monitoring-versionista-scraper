@@ -29,6 +29,9 @@ Options:
                    [default: edgi-versionista-archive]
                    [env: AWS_S3_BUCKET]
   --chunk SIZE     Send versions in chunks of this size. [default: 1000]
+  --update UPDATE  Set the update behavior, which determines how versions that
+                   are already in the database are treated. Should be one of
+                   'skip' (default), 'merge', or 'replace'.
 `);
 
 const dbUrl = composeUrl(
@@ -224,11 +227,14 @@ function composeUrl (sourceUrl, user, password, tail = '') {
 }
 
 function importIntoDb (versions, callback) {
+  const qs = args['--update'] ? {update: args['--update']} : {};
+
   request({
     method: 'POST',
     url: dbUrl,
     headers: {'Content-Type': 'application/x-json-stream'},
-    body: versions.map(v => JSON.stringify(v)).join('\n')
+    body: versions.map(v => JSON.stringify(v)).join('\n'),
+    qs
   }, (error, response, rawBody) => {
     if (error) {
       return callback(error)
