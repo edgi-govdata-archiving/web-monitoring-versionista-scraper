@@ -74,7 +74,10 @@ function importableVersion (version) {
       diff_hash: version.diff && version.diff.hash,
       diff_length: version.diff && version.diff.length,
       diff_text_hash: version.textDiff && version.textDiff.hash,
-      diff_text_length: version.textDiff && version.textDiff.length
+      diff_text_length: version.textDiff && version.textDiff.length,
+      length: version.length,
+      headers: version.headers,
+      content_type: version.contentType
     }
   };
 }
