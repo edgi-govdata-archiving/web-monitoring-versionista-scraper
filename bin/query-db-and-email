@@ -140,10 +140,10 @@ function createViewUrl (page, toVersion, fromVersion, useVersionista) {
     else if (toVersion) {
       url = metadata.diff_with_previous_url;
     }
-    if (!url.endsWith('/')) {
+    if (url && !url.endsWith('/')) {
       url = url + '/';
     }
-    return url;
+    return url || '';
   }
 
   let url = `${uiUrl}page/${page.uuid}/`;
