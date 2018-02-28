@@ -33,6 +33,11 @@ Options:
   --debug                 Print debug messages
 `);
 
+process.on('unhandledRejection', (reason, p) => {
+  console.error('Unhandled Rejection at:', p, 'reason:', reason);
+  console.error(reason.stack);
+});
+
 const scriptsPath = __dirname;
 const outputParent = path.resolve(args['--output']);
 const dbUrl = (args['--db-url'])
@@ -180,21 +185,31 @@ function getSiteUpdates () {
     // Group pages by site
     .then(pages => {
       pages.forEach(page => {
+        page.sites = page.tags
+          .filter(tag => tag.name.startsWith('site:'))
+          .map(tag => tag.name.replace(/^site:/, ''));
+        if (page.sites.length === 0) {
+          page.sites = ['no site'];
+        }
+
         const latest = page.versions[0];
         page.latest = latest;
-        const group = isError(latest) ? 'errors' : page.site;
-        pagesBySite.add(group, page);
 
         // Check whether there was also a non-error version that we should show
         if (isError(latest)) {
+          pagesBySite.add('errors', page);
+
           for (let i = 1, len = page.versions.length; i < len; i++) {
             const version = page.versions[i];
             if (!isError(version)) {
               const nonErrorPage = Object.assign({}, page, {latest: version});
-              pagesBySite.add(page.site, nonErrorPage);
+              page.sites.forEach(site => pagesBySite.add(site, nonErrorPage));
               break;
             }
           }
+        }
+        else {
+          page.sites.forEach(site => pagesBySite.add(site, page));
         }
       });
 
@@ -231,8 +246,8 @@ function csvStringForPages (pages) {
         version.uuid,
         // TODO: format
         timeString,
-        page.agency,
-        page.site,
+        page.maintainers.map(maintainer => maintainer.name).join(', '),
+        page.sites.join(', '),
         page.title,
         page.url,
         // for now, the "page view" link is always to Versionista
