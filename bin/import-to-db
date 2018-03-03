@@ -57,9 +57,9 @@ function importableVersion (version) {
 
   return {
     page_url: version.pageUrl,
-    page_title: version.pageTitle,
-    site_agency: version.agency,
-    site_name: version.siteName,
+    page_maintainers: [version.agency],
+    page_tags: [`site:${version.siteName}`],
+    title: version.pageTitle,
     capture_time: version.date,
     uri: s3Url,
     version_hash: version.hash,

@@ -33,6 +33,11 @@ Options:
   --debug                 Print debug messages
 `);
 
+process.on('unhandledRejection', (reason, p) => {
+  console.error('Unhandled Rejection at:', p, 'reason:', reason);
+  console.error(reason.stack);
+});
+
 const scriptsPath = __dirname;
 const outputParent = path.resolve(args['--output']);
 const dbUrl = (args['--db-url'])
@@ -167,12 +172,13 @@ function getSiteUpdates () {
       if (linkToVersionista) return pages;
 
       return parallelMap(page => {
-        return getAllResults(`/api/v0/pages/${page.uuid}/versions`, {
+        return getResponse(`/api/v0/pages/${page.uuid}/versions`, {
           source_type: 'versionista',
-          chunk_size: 1000
+          sort: 'capture_time:asc',
+          chunk_size: 1,
         })
-          .then(versions => {
-            page.earliest = versions[versions.length - 1];
+          .then(body => {
+            page.earliest = body.data[0];
             return page;
           });
       }, 10, pages);
@@ -180,21 +186,31 @@ function getSiteUpdates () {
     // Group pages by site
     .then(pages => {
       pages.forEach(page => {
+        page.sites = page.tags
+          .filter(tag => tag.name.startsWith('site:'))
+          .map(tag => tag.name.replace(/^site:/, ''));
+        if (page.sites.length === 0) {
+          page.sites = ['no site'];
+        }
+
         const latest = page.versions[0];
         page.latest = latest;
-        const group = isError(latest) ? 'errors' : page.site;
-        pagesBySite.add(group, page);
 
         // Check whether there was also a non-error version that we should show
         if (isError(latest)) {
+          pagesBySite.add('errors', page);
+
           for (let i = 1, len = page.versions.length; i < len; i++) {
             const version = page.versions[i];
             if (!isError(version)) {
               const nonErrorPage = Object.assign({}, page, {latest: version});
-              pagesBySite.add(page.site, nonErrorPage);
+              page.sites.forEach(site => pagesBySite.add(site, nonErrorPage));
               break;
             }
           }
+        }
+        else {
+          page.sites.forEach(site => pagesBySite.add(site, page));
         }
       });
 
@@ -231,8 +247,8 @@ function csvStringForPages (pages) {
         version.uuid,
         // TODO: format
         timeString,
-        page.agency,
-        page.site,
+        page.maintainers.map(maintainer => maintainer.name).join(', '),
+        page.sites.join(', '),
         page.title,
         page.url,
         // for now, the "page view" link is always to Versionista
@@ -387,8 +403,7 @@ function getCredentialsFromUrl (url) {
   return null;
 }
 
-// Get all pages of a result set from the given API endpoint and query data
-function getAllResults (apiPath, qs) {
+function getResponse (apiPath, qs) {
   const requestOptions = {qs};
   if (dbCredentials) {
     requestOptions.auth = dbCredentials;
@@ -397,6 +412,10 @@ function getAllResults (apiPath, qs) {
   return new Promise((resolve, reject) => {
     const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
     request.get(url, requestOptions, function(error, response) {
+      if (args['--debug']) {
+        console.log(`Got ${url}`);
+      }
+
       if (error) return reject(error);
 
       let body;
@@ -412,27 +431,32 @@ function getAllResults (apiPath, qs) {
         return reject(body.errors[0]);
       };
 
+      resolve(body);
+    });
+  });
+}
+
+function delayPromise (timeout) {
+  return new Promise(done => timeout ? setTimeout(done, timeout) : done());
+}
+
+// Get all pages of a result set from the given API endpoint and query data
+function getAllResults (apiPath, qs) {
+  return getResponse(apiPath, qs)
+    .then(body => {
       if (args['--debug']) {
         console.log(`Got ${getChunk(apiPath)} of ${getChunk(body.links.last)}`);
       }
 
       // Concatenate the next page onto the end of this one if there is one.
       if (body.links.next) {
-        const next = () => resolve(
-          getAllResults(body.links.next)
-            .then(nextPages => body.data.concat(nextPages)));
-
-        if (chunkDelay) {
-          setTimeout(next, chunkDelay);
-        }
-        else {
-          next();
-        }
-        return;
+        return delayPromise(chunkDelay || 0)
+          .then(() => getAllResults(body.links.next))
+          .then(nextPages => body.data.concat(nextPages));
       }
-      resolve(body.data);
+
+      return body.data;
     });
-  });
 }
 
 // Map an async transform function to each item of an array in parallel
@@ -464,7 +488,7 @@ function parallelMap (transform, parallelOperations, data) {
     };
 
     // Start working on as many items as possible
-    while (inProgress < parallelOperations) {
+    while (inProgress < Math.min(data.length, parallelOperations)) {
       transformNextItem();
     }
   });
