@@ -24,6 +24,9 @@ Options:
   --ui-url STRING         URL for web-monitoring-ui instance [env: WEB_MONITORING_UI_URL]
                           [default: https://monitoring.envirodatagov.org/]
   --link-to-versionista   Create view/diff links to Versionista instead of Web-Monitoring
+  --source-type TYPE      Restrict query to only versions with the given
+                          \`source_type\` field (as in the DB API). Use \`ANY\`
+                          for any source type. [default: versionista]
   --output DIRECTORY      Write output to this directory.
   --sender-email STRING   E-mail address to send from. [env: SEND_ARCHIVES_FROM]
   --sender-password PASS  Password for e-mail account to send from. [env: SEND_ARCHIVES_PASSWORD]
@@ -49,6 +52,11 @@ const dbUrl = (args['--db-url'])
 const dbCredentials = getCredentialsFromUrl(dbUrl);
 const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
 const linkToVersionista = args['--link-to-versionista'];
+
+let sourceType = args['--source-type'];
+if (sourceType === 'ANY') {
+  sourceType = undefined;
+}
 
 const senderEmailName = 'EDGI Versionista Scraper'
 const scrapeTime = new Date();
@@ -164,7 +172,7 @@ function getSiteUpdates () {
   return getAllResults('api/v0/pages', {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
     include_versions: 'true',
-    source_type: 'versionista',
+    source_type: sourceType,
     chunk_size: chunkSize
   })
     // Add an `earliest` property to each page with its first version
@@ -173,7 +181,7 @@ function getSiteUpdates () {
 
       return parallelMap(page => {
         return getResponse(`/api/v0/pages/${page.uuid}/versions`, {
-          source_type: 'versionista',
+          source_type: sourceType,
           sort: 'capture_time:asc',
           chunk_size: 1,
         })
