@@ -1,6 +1,14 @@
 #!/usr/bin/env node
 'use strict';
 
+// Set up Sentry.io error tracking
+const Raven = require('raven');
+if (process.env['SENTRY_DSN']) {
+  Raven.config(process.env['SENTRY_DSN'], {
+    captureUnhandledRejections: true
+  }).install();
+}
+
 const path = require('path');
 const stream = require('stream');
 const fs = require('fs-promise');
@@ -135,6 +143,8 @@ function writeFile (name, content, encoding = 'utf8') {
 
 let errorStream;
 let errorCount = 0;
+let errorsInFlight = 0;
+let errorsComplete = () => null;
 function logError (error) {
   errorCount++;
 
@@ -149,12 +159,34 @@ function logError (error) {
 
   errorStream.write(error.stack || error.message || error.toString());
   errorStream.write('\n');
+
+  errorsInFlight++;
+  Raven.captureException(error, () => {
+    errorsInFlight--;
+    if (errorsInFlight === 0) {
+      errorsComplete();
+    }
+  });
 }
 
 function flushErrors () {
-  if (errorStream && errorStream !== process.stderr) {
-    errorStream.end();
-  }
+  return new Promise((resolve, reject) => {
+    if (errorStream && errorStream !== process.stderr) {
+      errorStream.end();
+    }
+
+    // Ensure any errors sent to Sentry.io have the opportunity to get there!
+    if (errorsInFlight) {
+      const timer = setTimeout(() => resolve(), 5000);
+      errorsComplete = () => {
+        resolve();
+        clearTimeout(timer);
+      };
+    }
+    else {
+      resolve();
+    }
+  });
 }
 
 function minimum (items, getValue = Number) {
@@ -525,7 +557,13 @@ files
     console.error(`Completed in ${seconds} seconds`);
     if (errorCount) {
       console.error(`  with ${errorCount} errors`);
+      return new Promise(resolve => {
+        Raven.captureMessage(
+          `Completed in ${seconds} seconds with  ${errorCount} errors`,
+          () => resolve()
+        )
+      });
     }
-    flushErrors();
-    process.exit(errorCount ? 1 : 0);
-  });
+  })
+  .then(() => flushErrors())
+  .then(() => process.exit(errorCount ? 1 : 0));
