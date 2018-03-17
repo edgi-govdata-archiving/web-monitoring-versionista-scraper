@@ -1,13 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// Set up Sentry.io error tracking
-const Raven = require('raven');
-if (process.env['SENTRY_DSN']) {
-  Raven.config(process.env['SENTRY_DSN'], {
-    captureUnhandledRejections: true
-  }).install();
-}
+const sentryErrors = require('../lib/sentry-errors').setup();
 
 const path = require('path');
 const stream = require('stream');
@@ -143,8 +137,6 @@ function writeFile (name, content, encoding = 'utf8') {
 
 let errorStream;
 let errorCount = 0;
-let errorsInFlight = 0;
-let errorsComplete = () => null;
 function logError (error) {
   errorCount++;
 
@@ -159,34 +151,15 @@ function logError (error) {
 
   errorStream.write(error.stack || error.message || error.toString());
   errorStream.write('\n');
-
-  errorsInFlight++;
-  Raven.captureException(error, () => {
-    errorsInFlight--;
-    if (errorsInFlight === 0) {
-      errorsComplete();
-    }
-  });
+  sentryErrors.captureException(error);
 }
 
 function flushErrors () {
-  return new Promise((resolve, reject) => {
-    if (errorStream && errorStream !== process.stderr) {
-      errorStream.end();
-    }
+  if (errorStream && errorStream !== process.stderr) {
+    errorStream.end();
+  }
 
-    // Ensure any errors sent to Sentry.io have the opportunity to get there!
-    if (errorsInFlight) {
-      const timer = setTimeout(() => resolve(), 5000);
-      errorsComplete = () => {
-        resolve();
-        clearTimeout(timer);
-      };
-    }
-    else {
-      resolve();
-    }
-  });
+  return sentryErrors.flush();
 }
 
 function minimum (items, getValue = Number) {
@@ -557,12 +530,9 @@ files
     console.error(`Completed in ${seconds} seconds`);
     if (errorCount) {
       console.error(`  with ${errorCount} errors`);
-      return new Promise(resolve => {
-        Raven.captureMessage(
-          `Completed in ${seconds} seconds with  ${errorCount} errors`,
-          () => resolve()
-        )
-      });
+      return sentryErrors.captureMessage(
+        `Completed in ${seconds} seconds with  ${errorCount} errors`
+      );
     }
   })
   .then(() => flushErrors())
