@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const sentryErrors = require('../lib/sentry-errors').setup();
+
 const path = require('path');
 const stream = require('stream');
 const fs = require('fs');
@@ -59,11 +61,12 @@ pump(
   deferStreamItems(file => path.basename(file.path).startsWith('metadata-')),
   parallel(throughput, retryable(uploadFile)),
   error => {
+    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
+
     if (error) {
       console.error(error);
+      sentryErrors.captureException(error).then(() => process.exit(1));
     }
-
-    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
   });
 
 

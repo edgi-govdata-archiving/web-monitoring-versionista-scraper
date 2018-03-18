@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const sentryErrors = require('../lib/sentry-errors').setup();
+
 const path = require('path');
 const stream = require('stream');
 const fs = require('fs-promise');
@@ -149,12 +151,15 @@ function logError (error) {
 
   errorStream.write(error.stack || error.message || error.toString());
   errorStream.write('\n');
+  sentryErrors.captureException(error);
 }
 
 function flushErrors () {
   if (errorStream && errorStream !== process.stderr) {
     errorStream.end();
   }
+
+  return sentryErrors.flush();
 }
 
 function minimum (items, getValue = Number) {
@@ -525,7 +530,10 @@ files
     console.error(`Completed in ${seconds} seconds`);
     if (errorCount) {
       console.error(`  with ${errorCount} errors`);
+      return sentryErrors.captureMessage(
+        `Completed in ${seconds} seconds with  ${errorCount} errors`
+      );
     }
-    flushErrors();
-    process.exit(errorCount ? 1 : 0);
-  });
+  })
+  .then(() => flushErrors())
+  .then(() => process.exit(errorCount ? 1 : 0));

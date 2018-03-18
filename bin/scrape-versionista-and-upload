@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const sentryErrors = require('../lib/sentry-errors').setup();
+
 const path = require('path');
 const spawn = require('child_process').spawn;
 const mkdirp = require('mkdirp');
@@ -10,23 +12,23 @@ const args = neodoc.run(`
 Usage: scrape-versionista-and-upload [options] --output DIRECTORY
 
 Options:
-  -h, --help            Print this lovely help message.
-  --after HOURS         Only include versions from N hours ago. [default: 1]
-  --before HOURS        Only include versions before N hours ago. [default: 0]
-  --output DIRECTORY    Write output to this directory.
-  --email STRING        Versionista account e-mail address [env: VERSIONISTA_EMAIL]
-  --password STRING     Versionista account password [env: VERSIONISTA_PASSWORD]
-  --account-name NAME   Name to use for Versionista account in output. [env: VERSIONISTA_NAME]
-  --s3-key KEY          S3 access key [env: AWS_S3_KEY]
-  --s3-secret SECRET    S3 secret key [env: AWS_S3_SECRET]
-  --s3-bucket NAME      S3 bucket to upload to [env: AWS_S3_BUCKET]
-  --google-project ID   Google Cloud project ID [env: GOOGLE_PROJECT_ID]
-  --google-key PATH     Google Cloud key file [env: GOOGLE_STORAGE_KEY_FILE]
-  --google-bucket NAME  Google Could bucket to upload to [env: GOOGLE_BUCKET]
-  --throughput NUM      Number of simultaneous uploads to allow
-  --db-email STRING     Login e-mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
-  --db-password STRING  Password for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
-  --db-url STRING       URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
+  -h, --help                Print this lovely help message.
+  --after HOURS             Only include versions from N hours ago. [default: 1]
+  --before HOURS            Only include versions before N hours ago. [default: 0]
+  --output DIRECTORY        Write output to this directory.
+  --email STRING            Versionista account e-mail address [env: VERSIONISTA_EMAIL]
+  --password STRING         Versionista account password [env: VERSIONISTA_PASSWORD]
+  --account-name NAME       Name to use for Versionista account in output. [env: VERSIONISTA_NAME]
+  --s3-key KEY              S3 access key [env: AWS_S3_KEY]
+  --s3-secret SECRET        S3 secret key [env: AWS_S3_SECRET]
+  --s3-bucket NAME          S3 bucket to upload to [env: AWS_S3_BUCKET]
+  --google-project ID       Google Cloud project ID [env: GOOGLE_PROJECT_ID]
+  --google-key PATH         Google Cloud key file [env: GOOGLE_STORAGE_KEY_FILE]
+  --google-bucket NAME      Google Could bucket to upload to [env: GOOGLE_BUCKET]
+  --throughput NUM          Number of simultaneous uploads to allow
+  --db-email STRING         Login e-mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
+  --db-password STRING      Password for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
+  --db-url STRING           URL for web-monitoring-db instance [env: WEB_MONITORING_URL]
   --scrape-parallel NUM     Number of parallel connections to Versionista allowed.
   --scrape-pause-every NUM  Pause briefly after this many requests to Versionista.
   --scrape-pause-time MS    Milliseconds to pause for (see --scrape-pause-every)
@@ -49,7 +51,8 @@ const dbUrls = (args['--db-url'] || '')
 archiveAndUpload(args['--email'], args['--password'], error => {
   if (error) {
     console.error(error);
-    process.exit(1);
+    sentryErrors.captureMessage(`scrape-versionista-and-upload: ${error}`)
+      .then(() => process.exit(1));
   }
   else {
     console.error('Archive and upload complete!');

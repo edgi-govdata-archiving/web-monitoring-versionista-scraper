@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 'use strict';
 
+const sentryErrors = require('../lib/sentry-errors').setup();
+
 const fs = require('fs');
 const path = require('path');
 const stream = require('stream');
@@ -105,6 +107,11 @@ function importJsonFile (filePath, callback) {
       if (errors.length) {
         exitCode = 1;
         errors.forEach(error => console.error(error));
+        // sentryErrors.captureMessage(`${errors.length} import errors: ${errors.join(', ')}`);
+        sentryErrors.captureMessage(
+          `${errors.length} import errors`,
+          {extra: {errors: errors}}
+        );
       }
 
       console.log(`Completed ${versionsTotal} versions.`);
@@ -124,8 +131,8 @@ function complete (error) {
   }
 
   console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
-  console.error(`  ${versionsImported} of ${versionsTotal} imported from ${filesTotal} files.`)
-  process.exit(exitCode);
+  console.error(`  ${versionsImported} of ${versionsTotal} imported from ${filesTotal} files.`);
+  sentryErrors.flush().then(() => process.exit(exitCode));
 }
 
 function processNextFile () {
