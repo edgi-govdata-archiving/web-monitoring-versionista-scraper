@@ -169,12 +169,43 @@ function createViewUrl (page, toVersion, fromVersion, useVersionista) {
 
 function getSiteUpdates () {
   const pagesBySite = new SetMap();
-  return getAllResults('api/v0/pages', {
+
+  const timeframePages = getAllResults('api/v0/pages', {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
-    include_versions: 'true',
     source_type: sourceType,
     chunk_size: chunkSize
   })
+
+  // Looking up all the versions in one shot is much more efficient than
+  // looking up the versions for each page individually
+  const timeframeVersions = getAllResults('api/v0/versions', {
+    capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
+    source_type: sourceType,
+    chunk_size: chunkSize,
+    sort: 'capture_time:desc'
+  })
+
+  return Promise.all([timeframePages, timeframeVersions])
+    .then(([pages, versions]) => {
+      // Create a lookup tabel for pages
+      const pagesById = new Map();
+      pages.forEach(page => {
+        pagesById.set(page.uuid, page)
+        page.versions = [];
+      });
+
+      // Attach each version to its page
+      versions.forEach(version => {
+        const page = pagesById.get(version.page_uuid);
+        if (!page) {
+          console.error(`Warning: no matching page found for version ${version.uuid}`);
+          return;
+        }
+        page.versions.push(version);
+      });
+
+      return pages;
+    })
     // Add an `earliest` property to each page with its first version
     .then(pages => {
       if (linkToVersionista) return pages;
