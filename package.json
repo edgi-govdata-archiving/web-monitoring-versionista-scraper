@@ -13,7 +13,6 @@
     "aws-sdk": "^2.257.1",
     "fast-crc32c": "^1.0.4",
     "fs-promise": "^2.0.0",
-    "html-entities": "^1.2.0",
     "jsdom": "^9.12.0",
     "klaw": "^2.1.1",
     "mime-types": "^2.1.18",
