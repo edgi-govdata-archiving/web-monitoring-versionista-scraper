@@ -9,7 +9,7 @@
     "scrape-versionista": "./bin/scrape-versionista"
   },
   "dependencies": {
-    "@google-cloud/storage": "^1.1.0",
+    "@google-cloud/storage": "^1.7.0",
     "aws-sdk": "^2.257.1",
     "fast-crc32c": "^1.0.4",
     "fs-promise": "^2.0.3",
