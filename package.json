@@ -18,7 +18,7 @@
     "mime-types": "^2.1.18",
     "mkdirp": "^0.5.1",
     "neodoc": "^1.4.0",
-    "nodemailer": "^4.0.1",
+    "nodemailer": "^4.6.6",
     "parallel-transform": "^1.1.0",
     "pump": "^3.0.0",
     "raven": "^2.6.2",
