@@ -22,7 +22,7 @@
     "parallel-transform": "^1.1.0",
     "pump": "^3.0.0",
     "raven": "^2.6.2",
-    "request": "^2.81.0",
+    "request": "^2.87.0",
     "split": "^1.0.1",
     "unzip-stream": "^0.3.0"
   }
