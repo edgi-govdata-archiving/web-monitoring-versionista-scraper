@@ -234,6 +234,11 @@ function getSiteUpdates () {
 
         const latest = page.versions[0];
         page.latest = latest;
+        if (!latest) {
+          // Don't add a page to the list if it has no versions.
+          console.warn(`Found page with no versions: ${page.uuid}`);
+          return;
+        }
 
         // Check whether there was also a non-error version that we should show
         if (isError(latest)) {
