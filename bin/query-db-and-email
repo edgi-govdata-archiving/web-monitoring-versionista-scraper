@@ -225,12 +225,10 @@ function getSiteUpdates () {
     // Group pages by site
     .then(pages => {
       pages.forEach(page => {
-        page.sites = page.tags
+        page.site = page.tags
           .filter(tag => tag.name.startsWith('site:'))
-          .map(tag => tag.name.replace(/^site:/, ''));
-        if (page.sites.length === 0) {
-          page.sites = ['no site'];
-        }
+          .map(tag => tag.name.replace(/^site:/, ''))
+          .sort()[0] || 'no site';
 
         const latest = page.versions[0];
         page.latest = latest;
@@ -248,13 +246,13 @@ function getSiteUpdates () {
             const version = page.versions[i];
             if (!isError(version)) {
               const nonErrorPage = Object.assign({}, page, {latest: version});
-              page.sites.forEach(site => pagesBySite.add(site, nonErrorPage));
+              pagesBySite.add(page.site, nonErrorPage);
               break;
             }
           }
         }
         else {
-          page.sites.forEach(site => pagesBySite.add(site, page));
+          pagesBySite.add(page.site, page);
         }
       });
 
@@ -292,7 +290,7 @@ function csvStringForPages (pages) {
         // TODO: format
         timeString,
         page.maintainers.map(maintainer => maintainer.name).join(', '),
-        page.sites.join(', '),
+        page.site,
         page.title,
         page.url,
         // for now, the "page view" link is always to Versionista
