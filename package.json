@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^1.7.0",
-    "aws-sdk": "^2.296.0",
+    "aws-sdk": "^2.302.0",
     "fast-crc32c": "^1.0.4",
     "fs-promise": "^2.0.3",
     "jsdom": "^11.12.0",
