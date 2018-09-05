@@ -100,6 +100,9 @@ $ scrape-versionista --after 0.5
 
 For details about how this tool is deployed to automatically scrape Versionista in production, see [`deployment.md`](deployment.md).
 
+## Code of Conduct
+
+This repository falls under EDGI's [Code of Conduct](https://github.com/edgi-govdata-archiving/overview/blob/master/CONDUCT.md).
 
 ## Contributing Guidelines
 
