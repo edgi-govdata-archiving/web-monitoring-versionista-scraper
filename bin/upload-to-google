@@ -11,7 +11,7 @@ const mime = require('mime-types');
 const neodoc = require('neodoc');
 const parallel = require('parallel-transform');
 const pump = require('pump');
-const CloudStorage = require('@google-cloud/storage');
+const {Storage} = require('@google-cloud/storage');
 
 const args = neodoc.run(`
 Uploads a directory's contents to Google Cloud Storage bucket.
@@ -31,7 +31,7 @@ Options:
 // register custom mime types
 mime.types['jsonl'] = 'application/json';
 
-const cloudStorage = CloudStorage({
+const cloudStorage = new Storage({
   projectId: args['--project'],
   keyFilename: args['--keyfile']
 });
