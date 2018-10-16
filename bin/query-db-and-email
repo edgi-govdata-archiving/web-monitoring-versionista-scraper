@@ -3,6 +3,7 @@
 
 const path = require('path');
 const spawn = require('child_process').spawn;
+const flatten = require('../lib/flatten');
 const fs = require('fs-promise');
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
@@ -182,7 +183,8 @@ function getSiteUpdates () {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
     source_type: sourceType,
     chunk_size: chunkSize,
-    sort: 'capture_time:desc'
+    sort: 'capture_time:desc',
+    include_change_from_previous: true
   })
 
   return Promise.all([timeframePages, timeframeVersions])
@@ -284,6 +286,9 @@ function csvStringForPages (pages) {
       const earliest = page.earliest || {uuid: '', metadata: {}};
       const version = page.latest || {uuid: '', metadata: {}};
       const metadata = version.source_metadata;
+      const changePrevious = version.change_from_previous;
+      const annotationPrevious = changePrevious && changePrevious.current_annotation || {};
+
       return [
         '',
         version.uuid,
@@ -299,14 +304,56 @@ function csvStringForPages (pages) {
         createViewUrl(page, version, earliest),
         formatCsv.formatDate(new Date(version.capture_time)),
         earliest.capture_time ? formatCsv.formatDate(new Date(earliest.capture_time)) : '----',
-        metadata.diff_length,
-        metadata.diff_hash,
-        metadata.diff_text_length,
-        metadata.diff_text_hash
+        annotationPrevious.source_diff_length || metadata.diff_length || 0,
+        annotationPrevious.source_diff_hash || metadata.diff_hash,
+        annotationPrevious.text_diff_length || metadata.diff_text_length || 0,
+        annotationPrevious.text_diff_hash || metadata.diff_text_hash,
+        annotationPrevious.priority
       ];
     })
 
-  return formatCsv.toCsvString([formatCsv.headers, ...(formatCsv.sortRows(rows))]);
+  // Group rows by text hash and sort those groups by their maximum priority.
+  // Basically we want something like a priority sort, but we want to make sure
+  // identical hashes stay together.
+  const textHashGroups = rows.reduce((grouped, row) => {
+    let group = grouped[row[15]]
+    if (!group) {
+      group = grouped[row[15]] = {rows: [], priority: 0};
+    }
+    group.rows.push(row);
+    group.priority = Math.max(row[16], group.priority);
+    return grouped;
+  }, {});
+  const sortedGroups = Object.values(textHashGroups)
+    .sort((a, b) => b.priority - a.priority)
+    .map(group => group.rows.sort(compareRows));
+  const sortedRows = flatten(sortedGroups);
+
+  const headers = [...formatCsv.headers, 'priority'];
+  return formatCsv.toCsvString([headers, ...sortedRows]);
+}
+
+// Comparator for sorting rows within a text hash group
+function compareRows (a, b) {
+  const a_diff_hash = (a[13] || '').toLowerCase();
+  const b_diff_hash = (b[13] || '').toLowerCase();
+
+  if (a_diff_hash === b_diff_hash) {
+    const a_priority = a[16] || 0;
+    const b_priority = b[16] || 0;
+
+    if (a_priority === b_priority) {
+      const a_time = new Date(a[10]);
+      const b_time = new Date(b[10]);
+      if (a_time === b_time) {
+        return 0;
+      }
+      return a_time < b_time ? -1 : 1;
+    }
+    // priority sorts *descending*
+    return a_priority > b_priority ? -1 : 1;
+  }
+  return a_diff_hash < b_diff_hash ? -1 : 1;
 }
 
 function compressPath (targetPath) {
