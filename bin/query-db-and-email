@@ -454,7 +454,7 @@ function getResponse (apiPath, qs) {
 
   return new Promise((resolve, reject) => {
     const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    request.get(url, requestOptions, function(error, response) {
+    getWithRetries(url, requestOptions, 2, function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
@@ -477,6 +477,29 @@ function getResponse (apiPath, qs) {
       resolve(body);
     });
   });
+}
+
+// TODO: clean this up?
+function getWithRetries(url, options, retries, callback) {
+  if (typeof retries === 'function') {
+    [callback, retries] = [retries, 2];
+  }
+  let retryCount = 0;
+
+  function handleResult (error, response) {
+    if ((error || response.status >= 500) && retryCount <= retries) {
+      const delay = retryCount > 0 ? 1000 * Math.pow(2, retryCount - 1) : 0
+      setTimeout(() => {
+        retryCount++;
+        request.get(url, options, handleResult);
+      }, delay);
+    }
+    else {
+      callback(error, response);
+    }
+  }
+
+  request.get(url, options, handleResult);
 }
 
 function delayPromise (timeout) {
