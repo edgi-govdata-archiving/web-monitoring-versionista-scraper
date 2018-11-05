@@ -2,11 +2,11 @@
 # yarn lockfile v1
 
 
-"@google-cloud/common@^0.24.0":
-  version "0.24.0"
-  resolved "https://registry.yarnpkg.com/@google-cloud/common/-/common-0.24.0.tgz#6ea04363e526f80bf86a54f5954568dce46bb2c2"
+"@google-cloud/common@^0.26.0":
+  version "0.26.1"
+  resolved "https://registry.yarnpkg.com/@google-cloud/common/-/common-0.26.1.tgz#41880e7f6cb53402b411f9e8352eb030eb15401e"
   dependencies:
-    "@google-cloud/projectify" "^0.3.0"
+    "@google-cloud/projectify" "^0.3.1"
     "@google-cloud/promisify" "^0.3.0"
     "@types/duplexify" "^3.5.0"
     "@types/request" "^2.47.0"
@@ -15,7 +15,6 @@
     ent "^2.2.0"
     extend "^3.0.1"
     google-auth-library "^2.0.0"
-    is "^3.2.1"
     pify "^4.0.0"
     retry-request "^4.0.0"
     through2 "^2.0.3"
@@ -30,19 +29,19 @@
     split-array-stream "^2.0.0"
     stream-events "^1.0.4"
 
-"@google-cloud/projectify@^0.3.0":
-  version "0.3.0"
-  resolved "https://registry.yarnpkg.com/@google-cloud/projectify/-/projectify-0.3.0.tgz#adb984ac61f7ec855558ef677621b2488c50d05d"
+"@google-cloud/projectify@^0.3.1":
+  version "0.3.1"
+  resolved "https://registry.yarnpkg.com/@google-cloud/projectify/-/projectify-0.3.1.tgz#cca7b7eeeb5bbde5c16bf7188cbc3a7213965e7c"
 
 "@google-cloud/promisify@^0.3.0":
   version "0.3.1"
   resolved "https://registry.yarnpkg.com/@google-cloud/promisify/-/promisify-0.3.1.tgz#f641e6d944a8e0a05ee0cb1091dfa60089becdba"
 
-"@google-cloud/storage@^2.0.3":
-  version "2.0.3"
-  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-2.0.3.tgz#da1bf2cf67b9a91caec1ab62934222a836ec1f72"
+"@google-cloud/storage@^2.3.0":
+  version "2.3.0"
+  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-2.3.0.tgz#22b41bfa5c37f137c863f3a1722cc36459f749d4"
   dependencies:
-    "@google-cloud/common" "^0.24.0"
+    "@google-cloud/common" "^0.26.0"
     "@google-cloud/paginator" "^0.1.0"
     "@google-cloud/promisify" "^0.3.0"
     arrify "^1.0.0"
@@ -53,14 +52,13 @@
     extend "^3.0.0"
     gcs-resumable-upload "^0.13.0"
     hash-stream-validation "^0.2.1"
-    is "^3.0.1"
     mime "^2.2.0"
     mime-types "^2.0.8"
     once "^1.3.1"
     pumpify "^1.5.1"
-    request "^2.88.0"
     snakeize "^0.1.0"
     stream-events "^1.0.1"
+    teeny-request "^3.11.0"
     through2 "^2.0.0"
     xdg-basedir "^3.0.0"
 
@@ -669,7 +667,7 @@ is-typedarray@~1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/is-typedarray/-/is-typedarray-1.0.0.tgz#e479c80858df0c1b11ddda6940f96011fcda4a9a"
 
-is@^3.0.1, is@^3.2.1:
+is@^3.2.1:
   version "3.2.1"
   resolved "https://registry.yarnpkg.com/is/-/is-3.2.1.tgz#d0ac2ad55eb7b0bec926a5266f6c662aaa83dca5"
 
@@ -884,6 +882,10 @@ neodoc@^2.0.2:
   resolved "https://registry.yarnpkg.com/neodoc/-/neodoc-2.0.2.tgz#ad00b30b9758379dcd3cf752a0659bacbab2c4fb"
   dependencies:
     ansi-regex "^2.0.0"
+
+node-fetch@^2.2.0:
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/node-fetch/-/node-fetch-2.2.1.tgz#1fe551e0ded6c45b3b3b937d0fb46f76df718d1e"
 
 node-forge@^0.7.4:
   version "0.7.5"
@@ -1198,6 +1200,14 @@ stubs@^3.0.0:
 symbol-tree@^3.2.2:
   version "3.2.2"
   resolved "https://registry.yarnpkg.com/symbol-tree/-/symbol-tree-3.2.2.tgz#ae27db38f660a7ae2e1c3b7d1bc290819b8519e6"
+
+teeny-request@^3.11.0:
+  version "3.11.0"
+  resolved "https://registry.yarnpkg.com/teeny-request/-/teeny-request-3.11.0.tgz#2780e3d8d04ecd4947a59b03ccaee273dd9a9122"
+  dependencies:
+    https-proxy-agent "^2.2.1"
+    node-fetch "^2.2.0"
+    uuid "^3.3.2"
 
 thenify-all@^1.0.0, thenify-all@^1.6.0:
   version "1.6.0"
