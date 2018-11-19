@@ -321,7 +321,7 @@ function csvStringForPages (pages) {
       timeString,
       page.maintainers.map(maintainer => maintainer.name).join(', '),
       page.site,
-      page.title,
+      cleanString(page.title),
       page.url,
       // for now, the "page view" link is always to Versionista
       createViewUrl(page, null, null, true),
@@ -374,6 +374,11 @@ function formatHash (hash) {
     hash === '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945';    // empty JSON array (`[]`)
 
   return isEmpty ? '[no change]' : hash;
+}
+
+function cleanString (text) {
+  if (!text) return '';
+  return text.trim().replace(/[\n\s]+/g, ' ');
 }
 
 function compressPath (targetPath) {
