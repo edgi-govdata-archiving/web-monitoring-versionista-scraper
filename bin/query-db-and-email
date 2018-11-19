@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 
-const path = require('path');
-const spawn = require('child_process').spawn;
+const {compareMany, ascend, descend, getDeep} = require('../lib/tools');
 const flatten = require('../lib/flatten');
+const formatCsv = require('../lib/formatters/csv');
 const fs = require('fs-promise');
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
+const path = require('path');
 const request = require('request');
+const spawn = require('child_process').spawn;
 const stream = require('stream');
-const formatCsv = require('../lib/formatters/csv');
 
 const args = neodoc.run(`
 Query our database for updated pages/versions and send an e-mail with details.
@@ -176,6 +177,10 @@ function getSiteUpdates () {
     source_type: sourceType,
     chunk_size: chunkSize
   })
+  .catch(error => {
+    console.error(`Failed to get all pages: ${error}`);
+    return Promise.reject(error);
+  });
 
   // Looking up all the versions in one shot is much more efficient than
   // looking up the versions for each page individually
@@ -186,6 +191,10 @@ function getSiteUpdates () {
     sort: 'capture_time:desc',
     include_change_from_previous: true
   })
+  .catch(error => {
+    console.error(`Failed to get all versions: ${error}`);
+    return Promise.reject(error);
+  });
 
   return Promise.all([timeframePages, timeframeVersions])
     .then(([pages, versions]) => {
@@ -280,80 +289,91 @@ function writeCsvsForSites (pagesBySite) {
   }));
 }
 
-function csvStringForPages (pages) {
-  const rows = pages
-    .map(page => {
-      const earliest = page.earliest || {uuid: '', metadata: {}};
-      const version = page.latest || {uuid: '', metadata: {}};
-      const metadata = version.source_metadata;
-      const changePrevious = version.change_from_previous;
-      const annotationPrevious = changePrevious && changePrevious.current_annotation || {};
+// Create an object representing an annotation, whether one was present or not
+function compileAnnotation (version) {
+  const meta = version.source_metadata || {};
+  return Object.assign({
+    source_diff_length: meta.diff_length || 0,
+    source_diff_hash: meta.diff_hash || '?',
+    text_diff_length: meta.text_diff_length || 0,
+    text_diff_hash: meta.text_diff_hash || '?'
+  }, getDeep(version, 'change_from_previous', 'current_annotation'));
+}
 
-      return [
-        '',
-        version.uuid,
-        // TODO: format
-        timeString,
-        page.maintainers.map(maintainer => maintainer.name).join(', '),
-        page.site,
-        page.title,
-        page.url,
-        // for now, the "page view" link is always to Versionista
-        createViewUrl(page, null, null, true),
-        createViewUrl(page, version),
-        createViewUrl(page, version, earliest),
-        formatCsv.formatDate(new Date(version.capture_time)),
-        earliest.capture_time ? formatCsv.formatDate(new Date(earliest.capture_time)) : '----',
-        annotationPrevious.source_diff_length || metadata.diff_length || 0,
-        annotationPrevious.source_diff_hash || metadata.diff_hash,
-        annotationPrevious.text_diff_length || metadata.diff_text_length || 0,
-        annotationPrevious.text_diff_hash || metadata.diff_text_hash,
-        annotationPrevious.priority
-      ];
-    })
+function csvStringForPages (pages) {
+  const blankVersion = {uuid: '', source_metadata: {}};
+  const entries = pages
+    .map(page => {
+      const earliest = page.earliest || blankVersion;
+      const version = page.latest || blankVersion;
+      earliest.capture_time = parseDate(earliest.capture_time);
+      version.capture_time = parseDate(version.capture_time);
+      const annotation = compileAnnotation(version);
+      return {page, earliest, version, annotation};
+    });
+
+  // Creates a CSV row from an entry object (above)
+  const createRow = ({page, earliest, version, annotation}, index) => {
+    return [
+      index + 1,
+      version.uuid,
+      // TODO: format
+      timeString,
+      page.maintainers.map(maintainer => maintainer.name).join(', '),
+      page.site,
+      page.title,
+      page.url,
+      // for now, the "page view" link is always to Versionista
+      createViewUrl(page, null, null, true),
+      createViewUrl(page, version),
+      createViewUrl(page, version, earliest),
+      formatCsv.formatDate(version.capture_time),
+      formatCsv.formatDate(earliest.capture_time) || '----',
+      annotation.source_diff_length,
+      formatHash(annotation.source_diff_hash),
+      annotation.text_diff_length,
+      formatHash(annotation.text_diff_hash),
+      annotation.priority
+    ];
+  };
 
   // Group rows by text hash and sort those groups by their maximum priority.
   // Basically we want something like a priority sort, but we want to make sure
   // identical hashes stay together.
-  const textHashGroups = rows.reduce((grouped, row) => {
-    let group = grouped[row[15]]
+  const textHashGroups = new Map();
+  entries.forEach(entry => {
+    let group = textHashGroups.get(entry.annotation.text_diff_hash);
     if (!group) {
-      group = grouped[row[15]] = {rows: [], priority: 0};
+      group = [];
+      textHashGroups.set(entry.annotation.text_diff_hash, group);
     }
-    group.rows.push(row);
-    group.priority = Math.max(row[16], group.priority);
-    return grouped;
-  }, {});
-  const sortedGroups = Object.values(textHashGroups)
-    .sort((a, b) => b.priority - a.priority)
-    .map(group => group.rows.sort(compareRows));
-  const sortedRows = flatten(sortedGroups);
+    group.push(entry);
+    group.priority = Math.max(group.priority || 0, entry.annotation.priority || 0);
+  });
+
+  const sortedGroups = Array.from(textHashGroups.values())
+    .sort(descend('priority'))
+    .map(group => group.sort(compareMany(
+      ascend(x => x.annotation.source_diff_hash),
+      descend(x => x.annotation.priority),
+      ascend(x => x.version.capture_time)
+    )));
+  const sortedRows = flatten(sortedGroups).map(createRow);
 
   const headers = [...formatCsv.headers, 'priority'];
   return formatCsv.toCsvString([headers, ...sortedRows]);
 }
 
-// Comparator for sorting rows within a text hash group
-function compareRows (a, b) {
-  const a_diff_hash = (a[13] || '').toLowerCase();
-  const b_diff_hash = (b[13] || '').toLowerCase();
+function parseDate (date) {
+  return date && new Date(date);
+}
 
-  if (a_diff_hash === b_diff_hash) {
-    const a_priority = a[16] || 0;
-    const b_priority = b[16] || 0;
+function formatHash (hash) {
+  const isEmpty =
+    hash === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' ||  // empty string
+    hash === '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945';    // empty JSON array (`[]`)
 
-    if (a_priority === b_priority) {
-      const a_time = new Date(a[10]);
-      const b_time = new Date(b[10]);
-      if (a_time === b_time) {
-        return 0;
-      }
-      return a_time < b_time ? -1 : 1;
-    }
-    // priority sorts *descending*
-    return a_priority > b_priority ? -1 : 1;
-  }
-  return a_diff_hash < b_diff_hash ? -1 : 1;
+  return isEmpty ? '[no change]' : hash;
 }
 
 function compressPath (targetPath) {
@@ -501,7 +521,7 @@ function getResponse (apiPath, qs) {
 
   return new Promise((resolve, reject) => {
     const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    getWithRetries(url, requestOptions, 2, function (error, response) {
+    getWithRetries(url, requestOptions, 3, function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
