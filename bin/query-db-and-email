@@ -222,11 +222,12 @@ function getSiteUpdates () {
       if (linkToVersionista) return pages;
 
       return parallelMap(page => {
-        return getResponse(`/api/v0/pages/${page.uuid}/versions`, {
-          source_type: sourceType,
-          sort: 'capture_time:asc',
-          chunk_size: 1,
-        })
+        return delayPromise(chunkDelay || 0)
+          .then(() => getResponse(`/api/v0/pages/${page.uuid}/versions`, {
+            source_type: sourceType,
+            sort: 'capture_time:asc',
+            chunk_size: 1,
+          }))
           .then(body => {
             page.earliest = body.data[0];
             return page;
