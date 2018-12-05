@@ -61,10 +61,11 @@ function importableVersion (version) {
     page_url: version.pageUrl,
     page_maintainers: [version.agency],
     page_tags: [`site:${version.siteName}`],
-    title: version.pageTitle,
+    title: version.title || version.pageTitle,
     capture_time: version.date,
     uri: s3Url,
     version_hash: version.hash,
+    status: version.status,
     source_type: 'versionista',
     source_metadata: {
       account: version.account,
@@ -82,7 +83,11 @@ function importableVersion (version) {
       diff_text_length: version.textDiff && version.textDiff.length,
       length: version.length,
       headers: version.headers,
-      content_type: version.contentType
+      content_type: version.contentType,
+      status: version.status,
+      loadTime: version.loadTime,
+      redirects: version.redirects,
+      last_date: version.lastDate.toISOString()
     }
   };
 }
