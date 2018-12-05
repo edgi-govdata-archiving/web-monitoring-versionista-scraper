@@ -85,7 +85,7 @@ function importableVersion (version) {
       headers: version.headers,
       content_type: version.contentType,
       status: version.status,
-      loadTime: version.loadTime,
+      load_time: version.loadTime,
       redirects: version.redirects,
       last_date: version.lastDate
     }
