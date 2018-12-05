@@ -87,7 +87,7 @@ function importableVersion (version) {
       status: version.status,
       loadTime: version.loadTime,
       redirects: version.redirects,
-      last_date: version.lastDate.toISOString()
+      last_date: version.lastDate
     }
   };
 }
