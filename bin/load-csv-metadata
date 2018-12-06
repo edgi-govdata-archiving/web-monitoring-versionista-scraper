@@ -1,0 +1,296 @@
+#!/usr/bin/env node
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const stream = require('stream');
+const url = require('url');
+const neodoc = require('neodoc');
+const parallel = require('parallel-transform');
+const pump = require('pump');
+const request = require('request');
+const split = require('split');
+const Versionista = require('..');
+
+const args = neodoc.run(`
+Loads metadata from Versionista for a list of pages and posts it as a merge
+update to web-monitoring-db.
+
+Usage: load-csv-metadata [options] <path>
+
+Options:
+  -h, --help             Print this lovely help message.
+  --email EMAIL          E-Mail for web-monitoring-db [env: WEB_MONITORING_EMAIL]
+  --password PASS        PASSWORD for web-monitoring-db [env: WEB_MONITORING_PASSWORD]
+  --host HOST            Alternate host name for web-monitoring-db. Use this to send
+                         data to an alternate instance of the DB.
+                         [default: https://api.monitoring.envirodatagov.org/]
+                         [env: WEB_MONITORING_URL]
+  --chunk SIZE           Send versions in chunks of this size. [default: 2000]
+  --v-email ADDRESS      E-mail address of Versionista Account. [env: VERSIONISTA_EMAIL]
+  --v-password PASSWORD  Password of Versionista Account. [env: VERSIONISTA_PASSWORD]
+  --parallel NUMBER      Number of parallel connections to Versionista allowed.
+  --pause-every NUMBER   Pause briefly after this many requests to Versionista.
+  --pause-time MS        Milliseconds to pause for (see --pause-every)
+  --rate NUMBER          Maximum number of requests per minute
+`);
+
+
+
+
+if (!args['--v-email'] || !args['--v-password']) {
+  console.error('You must specify an e-mail and password for Versionista, either with the --email and --password arguments or with environment variables (VERSIONISTA_EMAIL, VERSIONISTA_PASSWORD).');
+  process.exit(1);
+}
+
+if (!args['--host'] || !args['--email'] || !args['--password']) {
+  console.error('You must specify a host, e-mail, and password for web-monitoring-db.');
+  process.exit(1);
+}
+
+if (!args['<path>']) {
+  console.error('You must specify a path to a file containing a list of page URLs to scrape metadata for.');
+  process.exit(1);
+}
+
+const dbUrl = composeUrl(
+  args['--host'],
+  args['--email'],
+  args['--password'],
+  'api/v0/imports');
+const chunkSize = args['--chunk'];
+const startDate = Date.now();
+
+const parallelism = args['--parallel'] ? parseInt(args['--parallel'], 10) : 2;
+
+const clientOptions = {
+  maxSockets: parallelism,
+  sleepEvery: args['--pause-every'] && parseInt(args['--pause-every'], 10),
+  sleepFor: args['--pause-time'] && parseInt(args['--pause-time'], 10),
+  maxPerMinute: args['--rate'] && parseFloat(args['--rate'])
+};
+Object.entries(clientOptions).forEach(([key, value]) => {
+  if (!value) { delete clientOptions[key]; }
+});
+
+const scraper = new Versionista({
+  email: args['--v-email'],
+  password: args['--v-password'],
+  client: clientOptions
+});
+
+
+let versionsTotal = 0;
+let versionsImported = 0;
+let pagesTotal = 0;
+
+function importPageUrlsFile (filePath) {
+  return new Promise((resolve, reject) => {
+    pump(
+      fs.createReadStream(filePath),
+      split(),
+      parallel(parallelism, (pageUrl, callback) => {
+        if (!pageUrl) return callback();
+
+        pagesTotal += 1;
+        console.log(`${pagesTotal}: Loading "${pageUrl}"`);
+        scraper.getVersions(pageUrl)
+          .then(versions => callback(null, versions), callback);
+      }),
+      new stream.Transform({
+        objectMode: true,
+        transform (versions, _, callback) {
+          for (const version of versions) {
+            this.push({
+              page_url: version.pageUrl,
+              capture_time: version.date,
+              status: version.status,
+              source_type: 'versionista',
+              source_metadata: {
+                length: version.length,
+                content_type: version.contentType,
+                status: version.status,
+                load_time: version.loadTime,
+                redirects: version.redirects,
+                last_date: version.lastDate
+              }
+            });
+          }
+          callback();
+        }
+      }),
+      chunkedObjectStream(chunkSize),
+      parallel(5, importIntoDb),
+      mapStream(importResult => {
+        const errors = importResult.processing_errors;
+        versionsTotal += importResult.processed_versions;
+        versionsImported += importResult.processed_versions - errors.length;
+
+        if (errors.length) {
+          process.exitCode = 1;
+          errors.forEach(error => console.error(error));
+          // // sentryErrors.captureMessage(`${errors.length} import errors: ${errors.join(', ')}`);
+          // sentryErrors.captureMessage(
+          //   `${errors.length} import errors`,
+          //   {extra: {errors: errors}}
+          // );
+        }
+
+        // console.log(`Completed ${versionsTotal} versions.`);
+      }),
+      // Unfortunately, pump only waits for the last stream's write end to finish,
+      // not for it to close or for its read end to end. This passthrough stream
+      // ensures the stream above finishes all its work before the callback :/
+      stream.PassThrough({objectMode: true}),
+      (error, results) => {
+        if (error) return reject(error);
+        resolve(results);
+      }
+    );
+  });
+}
+
+// GO!!!!!!
+importPageUrlsFile(args['<path>'])
+  .catch(error => {
+    process.exitCode = 1;
+    console.error(error);
+  })
+  .then(() => {
+    console.error(`Completed in ${(Date.now() - startDate) / 1000} seconds.`);
+    console.error(`  ${versionsImported} of ${versionsTotal} imported from ${pagesTotal} files.`);
+    // sentryErrors.flush().then(() => process.exit(exitCode));
+  });
+
+
+// HELPERS -----------------
+
+function mapStream (mapper) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        const result = mapper(data);
+        if (result != null) {
+          this.push(result);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+function filterStream (predicate) {
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      try {
+        if (predicate(data)) {
+          this.push(data);
+        }
+        callback();
+      }
+      catch (error) {
+        return callback(error);
+      }
+    }
+  });
+}
+
+function chunkedObjectStream (chunkSize = Infinity) {
+  if (chunkSize < 1 || typeof chunkSize !== 'number') {
+    chunkSize = 1;
+  }
+
+  return stream.Transform({
+    objectMode: true,
+    transform (data, encoding, callback) {
+      if (!this._chunkBuffer) {
+        this._chunkBuffer = [];
+      }
+      this._chunkBuffer.push(data);
+      if (this._chunkBuffer.length === chunkSize) {
+        this.push(this._chunkBuffer);
+        this._chunkBuffer = [];
+      }
+      callback();
+    },
+    flush (callback) {
+      if (this._chunkBuffer && this._chunkBuffer.length) {
+        this.push(this._chunkBuffer);
+      }
+      this._chunkBuffer = null;
+      callback();
+    }
+  });
+}
+
+function composeUrl (sourceUrl, user, password, tail = '') {
+  const parsedUrl = url.parse(sourceUrl);
+
+  if (!parsedUrl.auth) {
+    parsedUrl.auth = `${user}:${password}`;
+  }
+
+  if (!parsedUrl.pathname.endsWith('/')) {
+    parsedUrl.pathname += '/';
+  }
+  parsedUrl.pathname += tail;
+
+  return url.format(parsedUrl);
+}
+
+function importIntoDb (versions, callback) {
+  console.log(`Posting ${versions.length} versions to DB...`);
+
+  request({
+    method: 'POST',
+    url: dbUrl,
+    headers: {'Content-Type': 'application/x-json-stream'},
+    body: versions.map(v => JSON.stringify(v)).join('\n'),
+    qs: {create_pages: 'false', update: 'merge'}
+  }, (error, response, rawBody) => {
+    if (error) {
+      return callback(error)
+    }
+
+    let body = null;
+    try {
+      body = JSON.parse(rawBody);
+    }
+    catch (error) {
+      callback(new Error(`Could not parse upload response: ${body}`));
+      return;
+    }
+
+    if (body.errors) {
+      return callback(body.errors[0]);
+    }
+
+    const importId = body.data.id;
+    console.log(`Waiting for import ${importId}...`);
+    const poll = (callback) => {
+      setTimeout(() => {
+        request({
+          url: `${dbUrl}/${importId}`,
+          json: true
+        }, (error, response, body) => {
+          if (error) {
+            return callback(error);
+          }
+          else if (body.data.status !== 'complete') {
+            return poll(callback);
+          }
+
+          body.data.processed_versions = versions.length;
+          callback(null, body.data);
+        });
+      }, 1000);
+    };
+
+    poll(callback);
+  });
+}
