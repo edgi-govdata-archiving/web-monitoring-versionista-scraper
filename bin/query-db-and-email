@@ -176,7 +176,8 @@ function getSiteUpdates () {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
     source_type: sourceType,
     chunk_size: chunkSize,
-    include_earliest: true
+    include_earliest: true,
+    active: true
   })
   .catch(error => {
     console.error(`Failed to get all pages: ${error}`);
@@ -200,7 +201,7 @@ function getSiteUpdates () {
 
   return Promise.all([timeframePages, timeframeVersions])
     .then(([pages, versions]) => {
-      // Create a lookup tabel for pages
+      // Create a lookup table for pages
       const pagesById = new Map();
       pages.forEach(page => {
         pagesById.set(page.uuid, page)
