@@ -255,7 +255,14 @@ function importIntoDb (versions, callback) {
       return callback(error)
     }
 
-    const body = JSON.parse(rawBody);
+    let body;
+    try {
+      body = JSON.parse(rawBody);
+    }
+    catch (error) {
+      error.message = `${error.message} (while parsing: \`${rawBody}\`)`;
+      throw error;
+    }
 
     if (body.errors) {
       return callback(body.errors[0]);
