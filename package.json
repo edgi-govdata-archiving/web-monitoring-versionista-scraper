@@ -14,7 +14,7 @@
     "csv-parse": "^4.0.1",
     "fast-crc32c": "^1.0.4",
     "fs-promise": "^2.0.3",
-    "jsdom": "^13.0.0",
+    "jsdom": "^13.1.0",
     "klaw": "^3.0.0",
     "mime-types": "^2.1.21",
     "mkdirp": "^0.5.1",
