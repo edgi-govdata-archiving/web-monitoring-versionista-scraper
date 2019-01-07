@@ -220,10 +220,6 @@ binary@^0.3.0:
     buffers "~0.1.1"
     chainsaw "~0.1.0"
 
-bindings@~1.2.1:
-  version "1.2.1"
-  resolved "https://registry.yarnpkg.com/bindings/-/bindings-1.2.1.tgz#14ad6113812d2d37d72e67b4cacb4bb726505f11"
-
 browser-process-hrtime@^0.1.2:
   version "0.1.2"
   resolved "https://registry.yarnpkg.com/browser-process-hrtime/-/browser-process-hrtime-0.1.2.tgz#425d68a58d3447f02a04aa894187fce8af8b7b8e"
@@ -488,12 +484,6 @@ extend@~3.0.2:
 extsprintf@1.0.2:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/extsprintf/-/extsprintf-1.0.2.tgz#e1080e0658e300b06294990cc70e1502235fd550"
-
-fast-crc32c@^1.0.4:
-  version "1.0.4"
-  resolved "https://registry.yarnpkg.com/fast-crc32c/-/fast-crc32c-1.0.4.tgz#a8b566e9aa2e23b6b4116cf3d8d07f5f522d54e3"
-  optionalDependencies:
-    sse4_crc32 "^5.0.0"
 
 fast-deep-equal@^1.0.0:
   version "1.1.0"
@@ -873,10 +863,6 @@ mz@^2.6.0:
     object-assign "^4.0.1"
     thenify-all "^1.0.0"
 
-nan@^2.3.5:
-  version "2.6.2"
-  resolved "https://registry.yarnpkg.com/nan/-/nan-2.6.2.tgz#e4ff34e6c95fdfb5aecc08de6596f43605a7db45"
-
 neodoc@^2.0.2:
   version "2.0.2"
   resolved "https://registry.yarnpkg.com/neodoc/-/neodoc-2.0.2.tgz#ad00b30b9758379dcd3cf752a0659bacbab2c4fb"
@@ -1151,13 +1137,6 @@ split@^1.0.1:
   resolved "https://registry.yarnpkg.com/split/-/split-1.0.1.tgz#605bd9be303aa59fb35f9229fbea0ddec9ea07d9"
   dependencies:
     through "2"
-
-sse4_crc32@^5.0.0:
-  version "5.1.1"
-  resolved "https://registry.yarnpkg.com/sse4_crc32/-/sse4_crc32-5.1.1.tgz#1a2e73a0a810e2d69b605fede789d567829a04b7"
-  dependencies:
-    bindings "~1.2.1"
-    nan "^2.3.5"
 
 sshpk@^1.7.0:
   version "1.15.2"

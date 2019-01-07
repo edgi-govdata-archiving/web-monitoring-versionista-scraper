@@ -12,7 +12,6 @@
     "@google-cloud/storage": "^2.3.4",
     "aws-sdk": "^2.384.0",
     "csv-parse": "^4.3.0",
-    "fast-crc32c": "^1.0.4",
     "fs-promise": "^2.0.3",
     "jsdom": "^13.1.0",
     "klaw": "^3.0.0",
