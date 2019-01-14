@@ -394,7 +394,7 @@ function sendResults (result) {
       to: args['--receiver-email']
     };
     const sourceName = sourceType || 'all';
-    const subjectDetails = `${sourceName} versions @ ${friendlyDate}`
+    const subjectDetails = `${sourceName} versions @ ${friendlyDate} (grouped by ${tagGroup})`
     let signature = randomItem([
       '- Your friendly scraperbot',
       '- Your friendly scraperbot',
@@ -404,7 +404,7 @@ function sendResults (result) {
     signature = `\n\n${signature}\n\n`;
 
     if (result instanceof Error) {
-      message.subject = `[Experimental DB Query] Error scraping ${subjectDetails}`;
+      message.subject = `[Task Sheets] Error scraping ${subjectDetails}`;
 
       const greeting = randomItem([
         'Uhoh,',
@@ -416,7 +416,7 @@ function sendResults (result) {
       message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}:\n\n${result.rawText || result.message}\n\n${result.stack}\n${signature}`;
     }
     else {
-      message.subject = `[Experimental DB Query] Scraped ${subjectDetails}`;
+      message.subject = `[Task Sheets] Scraped ${subjectDetails}`;
       if (linkToVersionista) {
         message.subject += ' [with Versionista links]'
       }
@@ -432,7 +432,7 @@ function sendResults (result) {
       ]);
 
       const linkDestination = linkToVersionista ? 'Versionista' : 'the Web Monitoring UI';
-      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\n\n${result.text}${signature}`;
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\nThe CSVs are grouped by the “${tagGroup}” tag.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
     }
 
