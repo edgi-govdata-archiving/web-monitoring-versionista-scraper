@@ -36,6 +36,7 @@ Options:
   --chunk-size NUMBER     Number of records to fetch at a time [default: 100]
   --chunk-delay SECONDS   Number of seconds to wait between chunks [default: 0]
   --debug                 Print debug messages
+  --group-by TAG          Group resulting sheets by tag prefix. [default: site:]
 `);
 
 process.on('unhandledRejection', (reason, p) => {
@@ -54,6 +55,7 @@ const dbUrl = (args['--db-url'])
 const dbCredentials = getCredentialsFromUrl(dbUrl);
 const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
 const linkToVersionista = args['--link-to-versionista'];
+const tagGroup = args['--group-by'];
 
 let sourceType = args['--source-type'];
 if (sourceType === 'ANY') {
@@ -65,7 +67,7 @@ const scrapeTime = new Date();
 // Use ISO Zulu time without seconds in our time strings
 const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
-const outputDirectory = path.join(outputParent, `versionista-${safeScrapeTime}`);
+const outputDirectory = path.join(outputParent, `webmonitoring-${tagGroup.replace(/:/g, '')}s-${safeScrapeTime}`);
 
 
 let startTime;
@@ -120,11 +122,11 @@ class SetMap extends Map {
 
 let removeOutput = true;
 fs.ensureDir(outputDirectory)
-  .then(() => getSiteUpdates())
-  .then(result => writeCsvsForSites(result.pagesBySite).then(() => result))
+  .then(() => getGroupUpdates())
+  .then(result => writeCsvsForGroups(result.pagesByGroup).then(() => result))
   .then(result => {
     return compressPath(outputDirectory).then(compressed => ({
-      text: `Found ${result.siteCount} sites with updates
+      text: `Found ${result.groupCount} groups with updates
 Found ${result.pageCount} pages with updates
 Completed in ${result.queryDuration / 1000} seconds`,
       path: compressed
@@ -169,8 +171,8 @@ function createViewUrl (page, toVersion, fromVersion, useVersionista) {
   return url;
 }
 
-function getSiteUpdates () {
-  const pagesBySite = new SetMap();
+function getGroupUpdates () {
+  const pagesByGroup = new SetMap();
 
   const timeframePages = getAllResults('api/v0/pages', {
     capture_time: `${startTime.toISOString()}..${endTime.toISOString()}`,
@@ -220,13 +222,13 @@ function getSiteUpdates () {
 
       return pages;
     })
-    // Group pages by site
+    // Group pages based on tags
     .then(pages => {
       pages.forEach(page => {
-        page.site = page.tags
-          .filter(tag => tag.name.startsWith('site:'))
-          .map(tag => tag.name.replace(/^site:/, ''))
-          .sort()[0] || 'no site';
+        page.group = page.tags
+          .filter(tag => tag.name.startsWith(tagGroup))
+          .map(tag => tag.name.slice(tagGroup.length))
+          .sort()[0] || 'no group';
 
         const latest = page.versions[0];
         page.latest = latest;
@@ -238,26 +240,26 @@ function getSiteUpdates () {
 
         // Check whether there was also a non-error version that we should show
         if (isError(latest)) {
-          pagesBySite.add('errors', page);
+          pagesByGroup.add('errors', page);
 
           for (let i = 1, len = page.versions.length; i < len; i++) {
             const version = page.versions[i];
             if (!isError(version)) {
               const nonErrorPage = Object.assign({}, page, {latest: version});
-              pagesBySite.add(page.site, nonErrorPage);
+              pagesByGroup.add(page.group, nonErrorPage);
               break;
             }
           }
         }
         else {
-          pagesBySite.add(page.site, page);
+          pagesByGroup.add(page.group, page);
         }
       });
 
       return {
-        pagesBySite,
+        pagesByGroup,
         pageCount: pages.length,
-        siteCount: pagesBySite.size,
+        groupCount: pagesByGroup.size,
         queryDuration: Date.now() - scrapeTime.getTime()
       };
     });
@@ -268,10 +270,10 @@ function isError (version) {
     || version.source_metadata.error_code;
 }
 
-function writeCsvsForSites (pagesBySite) {
-  return Promise.all([...pagesBySite].map(([site, pages]) => {
+function writeCsvsForGroups (pagesByGroup) {
+  return Promise.all([...pagesByGroup].map(([group, pages]) => {
     const csv = csvStringForPages([...pages]);
-    const filename = `${site}_${safeScrapeTime}.csv`.replace(/[:/]/g, '_');
+    const filename = `${group}_${safeScrapeTime}.csv`.replace(/[:/]/g, '_');
     return fs.writeFile(path.join(outputDirectory, filename), csv);
   }));
 }
@@ -307,7 +309,7 @@ function csvStringForPages (pages) {
       // TODO: format
       timeString,
       page.maintainers.map(maintainer => maintainer.name).join(', '),
-      page.site,
+      page.group,
       cleanString(page.title),
       page.url,
       // for now, the "page view" link is always to Versionista
@@ -392,7 +394,7 @@ function sendResults (result) {
       to: args['--receiver-email']
     };
     const sourceName = sourceType || 'all';
-    const subjectDetails = `${sourceName} versions @ ${friendlyDate}`
+    const subjectDetails = `${sourceName} versions @ ${friendlyDate} (grouped by ${tagGroup})`
     let signature = randomItem([
       '- Your friendly scraperbot',
       '- Your friendly scraperbot',
@@ -402,7 +404,7 @@ function sendResults (result) {
     signature = `\n\n${signature}\n\n`;
 
     if (result instanceof Error) {
-      message.subject = `[Experimental DB Query] Error scraping ${subjectDetails}`;
+      message.subject = `[Task Sheets] Error scraping ${subjectDetails}`;
 
       const greeting = randomItem([
         'Uhoh,',
@@ -414,7 +416,7 @@ function sendResults (result) {
       message.text = `${greeting}\n\nThere was an error scraping the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}:\n\n${result.rawText || result.message}\n\n${result.stack}\n${signature}`;
     }
     else {
-      message.subject = `[Experimental DB Query] Scraped ${subjectDetails}`;
+      message.subject = `[Task Sheets] Scraped ${subjectDetails}`;
       if (linkToVersionista) {
         message.subject += ' [with Versionista links]'
       }
@@ -430,7 +432,7 @@ function sendResults (result) {
       ]);
 
       const linkDestination = linkToVersionista ? 'Versionista' : 'the Web Monitoring UI';
-      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\n\n${result.text}${signature}`;
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\nThe CSVs are grouped by the “${tagGroup}” tag.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
     }
 
