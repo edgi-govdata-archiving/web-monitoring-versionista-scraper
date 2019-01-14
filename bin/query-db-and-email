@@ -55,6 +55,7 @@ const dbUrl = (args['--db-url'])
 const dbCredentials = getCredentialsFromUrl(dbUrl);
 const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
 const linkToVersionista = args['--link-to-versionista'];
+const tagGroup = args['--group-by'];
 
 let sourceType = args['--source-type'];
 if (sourceType === 'ANY') {
@@ -66,7 +67,7 @@ const scrapeTime = new Date();
 // Use ISO Zulu time without seconds in our time strings
 const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
-const outputDirectory = path.join(outputParent, `versionista-${safeScrapeTime}`);
+const outputDirectory = path.join(outputParent, `webmonitoring-${tagGroup.replace(/:/g, '')}s-${safeScrapeTime}`);
 
 
 let startTime;
@@ -103,7 +104,6 @@ if (args['--before']) {
 
 const chunkDelay = Math.max(0, Number(args['--chunk-delay'])) * 1000;
 const chunkSize = Number(args['--chunk-size']) || 100;
-const tagGroup = args['--group-by'];
 
 class SetMap extends Map {
   get (key) {
