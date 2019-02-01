@@ -1,3 +1,5 @@
+[![Code of Conduct](https://img.shields.io/badge/%E2%9D%A4-code%20of%20conduct-blue.svg?style=flat)](https://github.com/edgi-govdata-archiving/overview/blob/master/CONDUCT.md)
+
 # web-monitoring-versionista-scraper
 
 This is a version of [versionista-outputter](https://github.com/edgi-govdata-archiving/versionista-outputter) that has been rewritten in Node.js and JSDom.
