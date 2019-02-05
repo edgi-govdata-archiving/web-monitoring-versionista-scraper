@@ -169,10 +169,10 @@ asynckit@^0.4.0:
   version "0.4.0"
   resolved "https://registry.yarnpkg.com/asynckit/-/asynckit-0.4.0.tgz#c79ed97f7f34cb8f2ba1bc9790bcc366474b4b79"
 
-aws-sdk@^2.384.0:
-  version "2.384.0"
-  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.384.0.tgz#c8fdce7c72f068f6d8b198b53cf33b6f35f3e811"
-  integrity sha512-E+pIOWFNhQH7GCkOl5GU+Vl42MlaKtAq0Yenaa2fRGult9097u7TnUx45V1pNKMCN9RnEFWQy3ZH1TEPEYJ0fw==
+aws-sdk@^2.396.0:
+  version "2.396.0"
+  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.396.0.tgz#3c4cd63c1a07731bbbf1fb17ea6a77d47619ecfb"
+  integrity sha512-HZMt+LP68cC4m7re4ujOAhJD7xfu6okoLk4bD6ZssxV1pBZNlfaJ/6MbscCxsXEQvvlE558QfzN+x/FujH80Ig==
   dependencies:
     buffer "4.9.1"
     events "1.1.1"
@@ -181,7 +181,7 @@ aws-sdk@^2.384.0:
     querystring "0.2.0"
     sax "1.2.1"
     url "0.10.3"
-    uuid "3.1.0"
+    uuid "3.3.2"
     xml2js "0.4.19"
 
 aws-sign2@~0.7.0:
@@ -1303,10 +1303,6 @@ url@0.10.3:
 util-deprecate@^1.0.1, util-deprecate@~1.0.1:
   version "1.0.2"
   resolved "https://registry.yarnpkg.com/util-deprecate/-/util-deprecate-1.0.2.tgz#450d4dc9fa70de732762fbd2d4a28981419a0ccf"
-
-uuid@3.1.0:
-  version "3.1.0"
-  resolved "https://registry.yarnpkg.com/uuid/-/uuid-3.1.0.tgz#3dd3d3e790abc24d7b0d3a034ffababe28ebbc04"
 
 uuid@3.3.2, uuid@^3.3.2:
   version "3.3.2"
