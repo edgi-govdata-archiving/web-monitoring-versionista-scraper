@@ -15,7 +15,7 @@ const stream = require('stream');
 const args = neodoc.run(`
 Query our database for updated pages/versions and send an e-mail with details.
 
-Usage: query-db-and-email [options]
+Usage: query-db-and-email [--group-by TAG]... [options]
 
 Options:
   -h, --help              Print this lovely help message.
@@ -55,7 +55,7 @@ const dbUrl = (args['--db-url'])
 const dbCredentials = getCredentialsFromUrl(dbUrl);
 const uiUrl = args['--ui-url'] + (args['--ui-url'].endsWith('/') ? '' : '/');
 const linkToVersionista = args['--link-to-versionista'];
-const tagGroup = args['--group-by'];
+const tagGroups = args['--group-by'];
 
 let sourceType = args['--source-type'];
 if (sourceType === 'ANY') {
@@ -67,7 +67,8 @@ const scrapeTime = new Date();
 // Use ISO Zulu time without seconds in our time strings
 const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
-const outputDirectory = path.join(outputParent, `webmonitoring-${tagGroup.replace(/:/g, '')}s-${safeScrapeTime}`);
+const safeTagGroups = tagGroups.map(group => group.replace(/:/g, '')).join('-');
+const outputDirectory = path.join(outputParent, `webmonitoring-${safeTagGroups}s-${safeScrapeTime}`);
 
 
 let startTime;
@@ -225,10 +226,19 @@ function getGroupUpdates () {
     // Group pages based on tags
     .then(pages => {
       pages.forEach(page => {
+        // Condense groups into a single string (each group separated by `--`)
         page.group = page.tags
-          .filter(tag => tag.name.startsWith(tagGroup))
-          .map(tag => tag.name.slice(tagGroup.length))
-          .sort()[0] || 'no group';
+          .reduce((groups, tag) => {
+            tagGroups.some((group, index) => {
+              if (tag.name.startsWith(group)) {
+                groups[index] = tag.name.slice(group.length);
+                return true;
+              }
+            });
+            return groups;
+          }, [])
+          .map(group => (group || ''))
+          .join('--');
 
         const latest = page.versions[0];
         page.latest = latest;
@@ -388,13 +398,21 @@ function sendResults (result) {
   return new Promise((resolve, reject) => {
     const friendlyDate = timeString.replace('T', ' ').replace('Z', ' (GMT)');
     const friendlyTime = friendlyDate.slice(11);
+    let friendlyGroup;
+    if (tagGroups.length > 2) {
+      const last = tagGroups.pop();
+      friendlyGroup = tagGroups.join(', ') + `, and ${last}`;
+    }
+    else {
+      friendlyGroup = tagGroups.join(' and ');
+    }
 
     const message = {
       from: `"${senderEmailName}" <${args['--sender-email']}>`,
       to: args['--receiver-email']
     };
     const sourceName = sourceType || 'all';
-    const subjectDetails = `${sourceName} versions @ ${friendlyDate} (grouped by ${tagGroup})`
+    const subjectDetails = `${sourceName} versions @ ${friendlyDate} (grouped by ${friendlyGroup})`
     let signature = randomItem([
       '- Your friendly scraperbot',
       '- Your friendly scraperbot',
@@ -432,7 +450,7 @@ function sendResults (result) {
       ]);
 
       const linkDestination = linkToVersionista ? 'Versionista' : 'the Web Monitoring UI';
-      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\nThe CSVs are grouped by the “${tagGroup}” tag.\n\n${result.text}${signature}`;
+      message.text = `${greeting}\n\nI scraped the last ${args['--after']} hours of ${sourceName} versions out of our DB at ${friendlyTime}.\nThe links in this data point to ${linkDestination}.\nThe CSVs are grouped by the ${friendlyGroup} tags.\n\n${result.text}${signature}`;
       message.attachments = [{path: result.path}];
     }
 
