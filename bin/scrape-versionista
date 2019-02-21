@@ -429,6 +429,10 @@ let versions = pages
 
       // FIXME: handle errors originating here
       updatedVersions
+        // Any errors leading into here will get handled and logged gracefully
+        // at the top level. Here, we just need to short circuit the following
+        // logic if there was an error.
+        .catch(() => [[], []])
         .then(([safes, errors]) => safes)
         .then(onlyMeaningfulDiffs)
         .then(versions => {
@@ -437,6 +441,10 @@ let versions = pages
 
       // FIXME: handle errors originating here
       updatedVersions
+        // Any errors leading into here will get handled and logged gracefully
+        // at the top level. Here, we just need to short circuit the following
+        // logic if there was an error.
+        .catch(() => [[], []])
         .then(([safes, errors]) => errors)
         .then(onlyMeaningfulDiffs)
         .then(versions => {
