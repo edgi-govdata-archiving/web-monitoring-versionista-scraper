@@ -325,10 +325,10 @@ cssstyle@^1.1.1:
   dependencies:
     cssom "0.3.x"
 
-csv-parse@^4.3.1:
-  version "4.3.1"
-  resolved "https://registry.yarnpkg.com/csv-parse/-/csv-parse-4.3.1.tgz#b2b92a4068106d6713952050593b2be06ec1a577"
-  integrity sha512-1V98UTtfefu8yKdYIGX1LFhfE2yMllveq2uCBay5y4ybfTzvW6I4M6r8Yc2YnKJdJBUig5ksEMh/bLqKg4vEMQ==
+csv-parse@^4.3.3:
+  version "4.3.3"
+  resolved "https://registry.yarnpkg.com/csv-parse/-/csv-parse-4.3.3.tgz#7aa120da34ce1a9d911fbb89c2ae313dcdaf7324"
+  integrity sha512-bZ+AZjm2LlWEp5+TKeFeXDldduCUUaxEif+KUv+zvAwmCvCKTqeSHVEyxztGCQ6OE+87ObRq4NsCmg91SuJbhQ==
 
 cyclist@~0.2.2:
   version "0.2.2"
