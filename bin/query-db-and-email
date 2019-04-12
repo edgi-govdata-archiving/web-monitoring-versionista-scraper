@@ -332,6 +332,7 @@ function csvStringForPages (pages) {
       formatHash(annotation.source_diff_hash),
       annotation.text_diff_length,
       formatHash(annotation.text_diff_hash),
+      page.versions.length,
       annotation.priority
     ];
   };
@@ -359,7 +360,7 @@ function csvStringForPages (pages) {
     )));
   const sortedRows = flatten(sortedGroups).map(createRow);
 
-  const headers = [...formatCsv.headers, 'priority'];
+  const headers = [...formatCsv.headers, 'number of versions', 'priority'];
   return formatCsv.toCsvString([headers, ...sortedRows]);
 }
 
