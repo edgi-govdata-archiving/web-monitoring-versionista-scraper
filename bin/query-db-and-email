@@ -299,6 +299,33 @@ function compileAnnotation (version) {
   }, getDeep(version, 'change_from_previous', 'current_annotation'));
 }
 
+// Merge a set of annotation objects to summarize the analysis for all changes
+// that occurred over the time period.
+function mergeAnnotations (annotations) {
+  // NOTE: annotations will come is descending order of time. Should we sort?
+  const base = Object.assign({}, annotations[0]);
+  return annotations.slice(1).reduce((merged, annotation) => {
+    // Just take the latest hash; not much useful we can do to combine them.
+    if (!isChangeHash(merged.source_diff_hash)) {
+      merged.source_diff_hash = annotation.source_diff_hash;
+    }
+    if (!isChangeHash(merged.text_diff_hash)) {
+      merged.text_diff_hash = annotation.text_diff_hash;
+    }
+
+    // Take the highest priority, but don't set priority if it's unknown.
+    if (annotation.priority != null) {
+      merged.priority = Math.max(merged.priority || 0, annotation.priority);
+    }
+
+    // Sum the lengths.
+    merged.source_diff_length += annotation.source_diff_length;
+    merged.text_diff_length += annotation.text_diff_length;
+
+    return merged;
+  }, base);
+}
+
 function csvStringForPages (pages) {
   const blankVersion = {uuid: '', source_metadata: {}};
   const entries = pages
@@ -307,12 +334,21 @@ function csvStringForPages (pages) {
       const version = page.latest || blankVersion;
       earliest.capture_time = parseDate(earliest.capture_time);
       version.capture_time = parseDate(version.capture_time);
-      const annotation = compileAnnotation(version);
+      const annotations = page.versions.map(compileAnnotation);
+      const annotation = mergeAnnotations(annotations);
       return {page, earliest, version, annotation};
     });
 
   // Creates a CSV row from an entry object (above)
   const createRow = ({page, earliest, version, annotation}, index) => {
+    // If we have change objects, we can use them to find the UUID of the
+    // latest version before the timeframe we queried. This'll be used to
+    // compose diff links that cover the whole timeframe.
+    const beforeTimeframe = getDeep(
+      page.versions[page.versions.length - 1],
+      'change_from_previous',
+      'uuid_from') || '';
+
     return [
       index + 1,
       version.uuid,
@@ -322,9 +358,8 @@ function csvStringForPages (pages) {
       page.group,
       cleanString(page.title),
       page.url,
-      // for now, the "page view" link is always to Versionista
-      createViewUrl(page, null, null, true),
-      createViewUrl(page, version),
+      createViewUrl(page),
+      createViewUrl(page, version, {uuid: beforeTimeframe}),
       createViewUrl(page, version, earliest),
       formatCsv.formatDate(version.capture_time),
       formatCsv.formatDate(earliest.capture_time) || '----',
@@ -361,6 +396,8 @@ function csvStringForPages (pages) {
   const sortedRows = flatten(sortedGroups).map(createRow);
 
   const headers = [...formatCsv.headers, 'number of versions', 'priority'];
+  // "Last two" is customized to cover the whole period in this script.
+  headers[8] = 'This Period - Side by Side';
   return formatCsv.toCsvString([headers, ...sortedRows]);
 }
 
@@ -368,12 +405,20 @@ function parseDate (date) {
   return date && new Date(date);
 }
 
-function formatHash (hash) {
-  const isEmpty =
-    hash === 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855' ||  // empty string
-    hash === '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945';    // empty JSON array (`[]`)
+// Hash of an empty string
+const hashEmptyString = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+// Hash of an empty JSON array (`[]`)
+const hashEmptyArray = '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945';
 
-  return isEmpty ? '[no change]' : hash;
+function isChangeHash (candidate) {
+  return candidate
+    && candidate !== '?'
+    && candidate !== hashEmptyString
+    && candidate !== hashEmptyArray;
+}
+
+function formatHash (hash) {
+  return isChangeHash(hash) ? hash : '[no change]';
 }
 
 function cleanString (text) {
