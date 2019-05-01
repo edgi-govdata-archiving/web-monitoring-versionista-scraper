@@ -15,7 +15,7 @@
     "fs-promise": "^2.0.3",
     "jsdom": "^14.0.0",
     "klaw": "^3.0.0",
-    "mime-types": "^2.1.22",
+    "mime-types": "^2.1.24",
     "mkdirp": "^0.5.1",
     "neodoc": "^2.0.2",
     "nodemailer": "^6.0.0",
