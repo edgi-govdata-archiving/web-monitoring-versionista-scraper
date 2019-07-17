@@ -591,8 +591,9 @@ function getResponse (apiPath, qs) {
         body = JSON.parse(response.body);
       }
       catch (error) {
-        throw new Error(
-          `Could not parse response for ${url}\n\n${response.body}`);
+        return reject(
+          new Error(`Could not parse response for ${url}\n\n${response.body}`)
+        );
       }
 
       if (response.statusCode !== 200) {
