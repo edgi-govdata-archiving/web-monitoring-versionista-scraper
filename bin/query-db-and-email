@@ -231,7 +231,8 @@ function getGroupUpdates () {
           .reduce((groups, tag) => {
             tagGroups.some((group, index) => {
               if (tag.name.startsWith(group)) {
-                groups[index] = tag.name.slice(group.length);
+                const groupName = (group === tag.name) ? tag.name : tag.name.slice(group.length);
+                groups[index] = groupName;
                 return true;
               }
             });
