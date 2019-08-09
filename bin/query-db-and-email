@@ -302,10 +302,31 @@ function compileAnnotation (version) {
 
 // Merge a set of annotation objects to summarize the analysis for all changes
 // that occurred over the time period.
-function mergeAnnotations (annotations) {
+function mergeAnnotations (versions, annotations) {
+  // If the start and end are OK pages, we want to skip counting the stats from
+  // any intermittent errors in between. Sometimes we'll record an intermittent
+  // server error or a bad deploy on a website, so it'll look like a massive
+  // change. If the error goes away again, though, it shouldn't count, since
+  // the end-to-end comparison will be much less of a big deal.
+  const skipErrors = versions.length >= 1
+    && getStatusCode(versions[0]) < 300
+    && getStatusCode(versions[versions.length - 1]) < 300;
+  let previousWasError = false;
+  // Go in ascending date order because we need to track whether the previous
+  // was an error.
+  versions = versions.slice().reverse();
+  annotations = annotations.slice().reverse();
+
   // NOTE: annotations will come is descending order of time. Should we sort?
   const base = Object.assign({}, annotations[0]);
-  return annotations.slice(1).reduce((merged, annotation) => {
+  return annotations.slice(1).reduce((merged, annotation, index) => {
+    // If we are skipping errors and this or the previous was an error, skip.
+    const isError = getStatusCode(versions[index + 1]) >= 300;
+    if (skipErrors && (isError || previousWasError)) {
+      previousWasError = isError;
+      return merged;
+    }
+
     // Just take the latest hash; not much useful we can do to combine them.
     if (!isChangeHash(merged.source_diff_hash)) {
       merged.source_diff_hash = annotation.source_diff_hash;
@@ -327,6 +348,12 @@ function mergeAnnotations (annotations) {
   }, base);
 }
 
+function getStatusCode (version) {
+  // This only supports Wayback-sourced data, but that's OK because it's all we
+  // we have right now.
+  return version && version.source_metadata.status_code || 200;
+}
+
 function csvStringForPages (pages) {
   const blankVersion = {uuid: '', source_metadata: {}};
   const entries = pages
@@ -336,7 +363,7 @@ function csvStringForPages (pages) {
       earliest.capture_time = parseDate(earliest.capture_time);
       version.capture_time = parseDate(version.capture_time);
       const annotations = page.versions.map(compileAnnotation);
-      const annotation = mergeAnnotations(annotations);
+      const annotation = mergeAnnotations(page.versions, annotations);
       return {page, earliest, version, annotation};
     });
 
@@ -573,7 +600,7 @@ function getCredentialsFromUrl (url) {
 }
 
 function getResponse (apiPath, qs) {
-  const requestOptions = {qs};
+  const requestOptions = {qs, qsStringifyOptions: {arrayFormat: 'brackets'}};
   if (dbCredentials) {
     requestOptions.auth = dbCredentials;
   }
