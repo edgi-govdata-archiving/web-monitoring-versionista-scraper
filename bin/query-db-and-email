@@ -708,17 +708,43 @@ function promised (func, ...args) {
 }
 
 // TODO: this should really take a serializer and deserializer
-function withCache (cachePath, name, operation, args, callback) {
-  const fileName = name.replace(/[\/\\:?()[\]&]/g, '-');
-  const filePath = path.join(cachePath, fileName);
+let cacheData = null;
+function getCacheObject (cachePath) {
+  if (cacheData) return Promise.resolve(cacheData);
 
-  fs.stat(filePath)
-    .then(() => fs.readFile(filePath, {encoding: 'utf8'}))
+  return fs.readFile(cacheData, {encoding: 'utf8'})
     .then(JSON.parse)
+    .catch(() => ({}))
+    .then(fileData => {
+      cacheData = fileData;
+      return fileData;
+    });
+}
+
+async function getCache (cachePath, key) {
+  const cache = await getCacheObject(cachePath);
+  const value = cache[key];
+  if (value == null) throw new Error(`Unset cache key: ${key}`);
+  return value;
+}
+
+let cacheWriteTimer = 0;
+async function setCache (cachePath, key, value) {
+  const cache = await getCacheObject(cachePath)
+  cache[key] = value;
+  clearTimeout(cacheWriteTimer);
+  cacheWriteTimer = setTimeout(() => {
+    fs.ensureDir(path.relative(cachePath, '..'))
+      .then(() => fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'}))
+      .catch(error => console.error('Failed to write cache:', error));
+  }, 5000);
+}
+
+function withCache (cachePath, name, operation, args, callback) {
+  getCache(cachePath, name)
     .catch(async () => {
       const result = await promised(operation, ...args);
-      await fs.ensureDir(cachePath);
-      await fs.writeFile(filePath, JSON.stringify(result), {encoding: 'utf8'});
+      await setCache(cachePath, name, result);
       return result;
     })
     .then(
@@ -732,7 +758,8 @@ async function clearCache (cachePath) {
     await fs.remove(cachePath);
   }
   catch (error) {
-    // Failure is OK.
+    // Failure is OK, but log it.
+    console.error('Error clearing cache:', error);
   }
 }
 
