@@ -144,6 +144,7 @@ Completed in ${result.queryDuration / 1000} seconds`,
   })
   .then(async results => {
     await clearCache(requestCache);
+    return results;
   })
   .then(sendResults)
   .catch(error => console.error(error.stack || error))
@@ -755,6 +756,7 @@ function withCache (cachePath, name, operation, args, callback) {
 
 async function clearCache (cachePath) {
   try {
+    clearTimeout(cacheWriteTimer);
     await fs.remove(cachePath);
   }
   catch (error) {
