@@ -70,7 +70,7 @@ const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
 const safeTagGroups = tagGroups.map(group => group.replace(/:/g, '')).join('-');
 const outputDirectory = path.join(outputParent, `webmonitoring-${safeTagGroups}s-${safeScrapeTime}`);
-const requestCache = path.join(outputDirectory, '.cache');
+const requestCache = path.join(outputParent, '.cache');
 
 
 let startTime;
