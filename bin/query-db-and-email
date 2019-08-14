@@ -718,10 +718,10 @@ function withCache (cachePath, name, operation, args, callback) {
       const result = await promised(operation, ...args);
       await fs.ensureDir(cachePath);
       await fs.writeFile(filePath, JSON.stringify(result), {encoding: 'utf8'});
-      return response;
+      return result;
     })
     .then(
-      response => callback(null, response),
+      result => callback(null, result),
       error => callback(error)
     );
 }
