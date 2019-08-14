@@ -623,7 +623,8 @@ function getResponse (apiPath, query) {
       });
     }
 
-    withCache(requestCache, url, getWithRetries, [url, requestOptions, 3], function (error, response) {
+    const cacheName = url.replace(/^http(s?):\/\/[^\/]\/?/, '');
+    withCache(requestCache, cacheName, getWithRetries, [url, requestOptions, 3], function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
