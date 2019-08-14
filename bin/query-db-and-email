@@ -617,9 +617,11 @@ function getResponse (apiPath, query) {
 
   return new Promise((resolve, reject) => {
     let url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
+    // Serialize the querstring ourselves so we can use it in the cache key.
     if (query) {
       url += '?' + qs.stringify(query, {
         arrayFormat: 'brackets',
+        // Sort so we have consistent cache keys.
         sort: alphabeticalSort
       });
     }
@@ -707,6 +709,7 @@ function promised (func, ...args) {
   });
 }
 
+// TODO: should also rewrite all this cache stuff as a class
 // TODO: this should really take a serializer and deserializer
 let cacheData = null;
 function getCacheObject (cachePath) {
@@ -721,6 +724,31 @@ function getCacheObject (cachePath) {
     });
 }
 
+let cacheWriteTimer = -1;
+const persistCacheAfter = 5000;
+async function writeCacheObject (cachePath, cache, now = false) {
+  if (now) {
+    try {
+      // Clear the timer *first* because fs.writeFile is async -- there is an
+      // opportunity for new data to be added to the memory cache between when
+      // the write finishes and the next instruction. Better to schedule an
+      // extra write than to miss a write!
+      cacheWriteTimer = -1;
+      await fs.ensureDir(path.resolve(cachePath, '..'));
+      await fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'});
+    }
+    catch (error) {
+      console.error('Failed to write cache:', error);
+    }
+  }
+  else if (cacheWriteTimer === -1) {
+    cacheWriteTimer = setTimeout(
+      () => writeCacheObject(cachePath, cache, true),
+      persistCacheAfter
+    );
+  }
+}
+
 async function getCache (cachePath, key) {
   const cache = await getCacheObject(cachePath);
   const value = cache[key];
@@ -728,16 +756,10 @@ async function getCache (cachePath, key) {
   return value;
 }
 
-let cacheWriteTimer = 0;
 async function setCache (cachePath, key, value) {
   const cache = await getCacheObject(cachePath)
   cache[key] = value;
-  clearTimeout(cacheWriteTimer);
-  cacheWriteTimer = setTimeout(() => {
-    fs.ensureDir(path.resolve(cachePath, '..'))
-      .then(() => fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'}))
-      .catch(error => console.error('Failed to write cache:', error));
-  }, 5000);
+  writeCacheObject(cachePath, cache);
 }
 
 function withCache (cachePath, name, operation, args, callback) {
