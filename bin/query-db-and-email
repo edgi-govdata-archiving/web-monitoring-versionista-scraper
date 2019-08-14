@@ -624,8 +624,7 @@ function getResponse (apiPath, query) {
       });
     }
 
-    const cacheName = url.replace(/^http(s?):\/\/[^\/]\/?/, '');
-    withCache(requestCache, cacheName, getWithRetries, [url, requestOptions, 3], function (error, response) {
+    withCache(requestCache, url, getWithRetries, [url, requestOptions, 3], function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
@@ -713,7 +712,7 @@ let cacheData = null;
 function getCacheObject (cachePath) {
   if (cacheData) return Promise.resolve(cacheData);
 
-  return fs.readFile(cacheData, {encoding: 'utf8'})
+  return fs.readFile(cachePath, {encoding: 'utf8'})
     .then(JSON.parse)
     .catch(() => ({}))
     .then(fileData => {
@@ -735,7 +734,7 @@ async function setCache (cachePath, key, value) {
   cache[key] = value;
   clearTimeout(cacheWriteTimer);
   cacheWriteTimer = setTimeout(() => {
-    fs.ensureDir(path.relative(cachePath, '..'))
+    fs.ensureDir(path.resolve(cachePath, '..'))
       .then(() => fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'}))
       .catch(error => console.error('Failed to write cache:', error));
   }, 5000);
