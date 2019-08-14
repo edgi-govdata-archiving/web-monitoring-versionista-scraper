@@ -8,6 +8,7 @@ const fs = require('fs-promise');
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const qs = require('qs');
 const request = require('request');
 const spawn = require('child_process').spawn;
 const stream = require('stream');
