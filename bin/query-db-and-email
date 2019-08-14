@@ -608,7 +608,7 @@ function alphabeticalSort(a, b) {
   return a.localeCompare(b);
 }
 
-function getResponse (apiPath, qs) {
+function getResponse (apiPath, query) {
   const requestOptions = {};
   if (dbCredentials) {
     requestOptions.auth = dbCredentials;
@@ -616,8 +616,8 @@ function getResponse (apiPath, qs) {
 
   return new Promise((resolve, reject) => {
     let url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    if (qs) {
-      url += '?' + qs.stringify(qs, {
+    if (query) {
+      url += '?' + qs.stringify(query, {
         arrayFormat: 'brackets',
         sort: alphabeticalSort
       });
