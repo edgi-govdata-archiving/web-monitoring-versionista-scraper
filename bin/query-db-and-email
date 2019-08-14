@@ -69,6 +69,7 @@ const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
 const safeTagGroups = tagGroups.map(group => group.replace(/:/g, '')).join('-');
 const outputDirectory = path.join(outputParent, `webmonitoring-${safeTagGroups}s-${safeScrapeTime}`);
+const requestCache = path.join(outputDirectory, '.cache');
 
 
 let startTime;
@@ -139,6 +140,9 @@ Completed in ${result.queryDuration / 1000} seconds`,
     // write to console, but also send in e-mail
     console.error(error.stack || error)
     return error;
+  })
+  .then(async results => {
+    await clearCache(requestCache);
   })
   .then(sendResults)
   .catch(error => console.error(error.stack || error))
@@ -599,15 +603,26 @@ function getCredentialsFromUrl (url) {
   return null;
 }
 
+function alphabeticalSort(a, b) {
+  return a.localeCompare(b);
+}
+
 function getResponse (apiPath, qs) {
-  const requestOptions = {qs, qsStringifyOptions: {arrayFormat: 'brackets'}};
+  const requestOptions = {};
   if (dbCredentials) {
     requestOptions.auth = dbCredentials;
   }
 
   return new Promise((resolve, reject) => {
-    const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    getWithRetries(url, requestOptions, 3, function (error, response) {
+    let url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
+    if (qs) {
+      url += '?' + qs.stringify(qs, {
+        arrayFormat: 'brackets',
+        sort: alphabeticalSort
+      });
+    }
+
+    withCache(requestCache, url, getWithRetries, [url, requestOptions, 3], function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
@@ -633,6 +648,7 @@ function getResponse (apiPath, qs) {
 }
 
 // TODO: clean this up?
+// TODO: rewrite as promises
 function getWithRetries(url, options, retries, callback) {
   if (typeof retries === 'function') {
     [callback, retries] = [retries, 2];
@@ -640,7 +656,7 @@ function getWithRetries(url, options, retries, callback) {
   let retryCount = 0;
 
   function handleResult (error, response) {
-    if ((error || response.status >= 500) && retryCount <= retries) {
+    if ((error || response.statusCode >= 500) && retryCount <= retries) {
       const delay = retryCount > 0 ? 1000 * Math.pow(2, retryCount - 1) : 0
       setTimeout(() => {
         retryCount++;
@@ -653,6 +669,69 @@ function getWithRetries(url, options, retries, callback) {
   }
 
   request.get(url, options, handleResult);
+}
+
+// function getAsPromise (url, options) {
+//   return new Promise((resolve, reject) => {
+//     request.get(url, options, (error, response) => {
+//       if (error) return reject(error);
+//       resolve(response);
+//     });
+//   });
+// }
+
+// async function withFileCache (basePath, name, operation, args) {
+//   const fileName = name.replace(/[\/\\:?()[\]&]/g, '-');
+//   const filePath = path.join(basePath, fileName);
+//   try {
+//     await fs.stat(filePath);
+//     const body = await fs.readFile(filePath, {encoding: 'utf8'});
+//     return {body, status: 200, statusCode: 200};
+//   }
+//   catch (error) {
+//     const result = await operation(args);
+//     await fs.ensureDir(basePath);
+//     await fs.writeFile(filePath, result.body, {encoding: 'utf8'});
+//     return result;
+//   }
+// }
+
+function promised (func, ...args) {
+  return new Promise((resolve, reject) => {
+    func(...args, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+  });
+}
+
+// TODO: this should really take a serializer and deserializer
+function withCache (cachePath, name, operation, args, callback) {
+  const fileName = name.replace(/[\/\\:?()[\]&]/g, '-');
+  const filePath = path.join(cachePath, fileName);
+
+  fs.stat(filePath)
+    .then(() => fs.readFile(filePath, {encoding: 'utf8'}))
+    .then(JSON.parse)
+    .catch(async () => {
+      const result = await promised(operation, ...args);
+      await fs.ensureDir(cachePath);
+      await fs.writeFile(filePath, JSON.stringify(result), {encoding: 'utf8'});
+      return response;
+    })
+    .then(
+      response => callback(null, response),
+      error => callback(error)
+    );
+}
+
+async function clearCache (cachePath) {
+  try {
+    await fs.remove(cachePath);
+  }
+  catch (error) {
+    // Failure is OK.
+  }
 }
 
 function delayPromise (timeout) {
