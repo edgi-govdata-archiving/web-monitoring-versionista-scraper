@@ -8,6 +8,7 @@ const fs = require('fs-promise');
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
 const path = require('path');
+const qs = require('qs');
 const request = require('request');
 const spawn = require('child_process').spawn;
 const stream = require('stream');
@@ -69,6 +70,7 @@ const timeString = scrapeTime.toISOString().slice(0, 16) + 'Z';
 const safeScrapeTime = timeString.replace(/:/g, '-');
 const safeTagGroups = tagGroups.map(group => group.replace(/:/g, '')).join('-');
 const outputDirectory = path.join(outputParent, `webmonitoring-${safeTagGroups}s-${safeScrapeTime}`);
+const requestCache = path.join(outputParent, '.cache');
 
 
 let startTime;
@@ -139,6 +141,10 @@ Completed in ${result.queryDuration / 1000} seconds`,
     // write to console, but also send in e-mail
     console.error(error.stack || error)
     return error;
+  })
+  .then(async results => {
+    await clearCache(requestCache);
+    return results;
   })
   .then(sendResults)
   .catch(error => console.error(error.stack || error))
@@ -599,15 +605,28 @@ function getCredentialsFromUrl (url) {
   return null;
 }
 
-function getResponse (apiPath, qs) {
-  const requestOptions = {qs, qsStringifyOptions: {arrayFormat: 'brackets'}};
+function alphabeticalSort(a, b) {
+  return a.localeCompare(b);
+}
+
+function getResponse (apiPath, query) {
+  const requestOptions = {};
   if (dbCredentials) {
     requestOptions.auth = dbCredentials;
   }
 
   return new Promise((resolve, reject) => {
-    const url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
-    getWithRetries(url, requestOptions, 3, function (error, response) {
+    let url = /^http(s?):\/\//.test(apiPath) ? apiPath : `${dbUrl}${apiPath}`;
+    // Serialize the querstring ourselves so we can use it in the cache key.
+    if (query) {
+      url += '?' + qs.stringify(query, {
+        arrayFormat: 'brackets',
+        // Sort so we have consistent cache keys.
+        sort: alphabeticalSort
+      });
+    }
+
+    withCache(requestCache, url, getWithRetries, [url, requestOptions, 3], function (error, response) {
       if (args['--debug']) {
         console.log(`Got ${url}`);
       }
@@ -633,6 +652,7 @@ function getResponse (apiPath, qs) {
 }
 
 // TODO: clean this up?
+// TODO: rewrite as promises
 function getWithRetries(url, options, retries, callback) {
   if (typeof retries === 'function') {
     [callback, retries] = [retries, 2];
@@ -640,7 +660,7 @@ function getWithRetries(url, options, retries, callback) {
   let retryCount = 0;
 
   function handleResult (error, response) {
-    if ((error || response.status >= 500) && retryCount <= retries) {
+    if ((error || response.statusCode >= 500) && retryCount <= retries) {
       const delay = retryCount > 0 ? 1000 * Math.pow(2, retryCount - 1) : 0
       setTimeout(() => {
         retryCount++;
@@ -653,6 +673,117 @@ function getWithRetries(url, options, retries, callback) {
   }
 
   request.get(url, options, handleResult);
+}
+
+// function getAsPromise (url, options) {
+//   return new Promise((resolve, reject) => {
+//     request.get(url, options, (error, response) => {
+//       if (error) return reject(error);
+//       resolve(response);
+//     });
+//   });
+// }
+
+// async function withFileCache (basePath, name, operation, args) {
+//   const fileName = name.replace(/[\/\\:?()[\]&]/g, '-');
+//   const filePath = path.join(basePath, fileName);
+//   try {
+//     await fs.stat(filePath);
+//     const body = await fs.readFile(filePath, {encoding: 'utf8'});
+//     return {body, status: 200, statusCode: 200};
+//   }
+//   catch (error) {
+//     const result = await operation(args);
+//     await fs.ensureDir(basePath);
+//     await fs.writeFile(filePath, result.body, {encoding: 'utf8'});
+//     return result;
+//   }
+// }
+
+function promised (func, ...args) {
+  return new Promise((resolve, reject) => {
+    func(...args, (error, result) => {
+      if (error) return reject(error);
+      resolve(result);
+    });
+  });
+}
+
+// TODO: should also rewrite all this cache stuff as a class
+// TODO: this should really take a serializer and deserializer
+let cacheData = null;
+function getCacheObject (cachePath) {
+  if (cacheData) return Promise.resolve(cacheData);
+
+  return fs.readFile(cachePath, {encoding: 'utf8'})
+    .then(JSON.parse)
+    .catch(() => ({}))
+    .then(fileData => {
+      cacheData = fileData;
+      return fileData;
+    });
+}
+
+let cacheWriteTimer = -1;
+const persistCacheAfter = 5000;
+async function writeCacheObject (cachePath, cache, now = false) {
+  if (now) {
+    try {
+      // Clear the timer *first* because fs.writeFile is async -- there is an
+      // opportunity for new data to be added to the memory cache between when
+      // the write finishes and the next instruction. Better to schedule an
+      // extra write than to miss a write!
+      cacheWriteTimer = -1;
+      await fs.ensureDir(path.resolve(cachePath, '..'));
+      await fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'});
+    }
+    catch (error) {
+      console.error('Failed to write cache:', error);
+    }
+  }
+  else if (cacheWriteTimer === -1) {
+    cacheWriteTimer = setTimeout(
+      () => writeCacheObject(cachePath, cache, true),
+      persistCacheAfter
+    );
+  }
+}
+
+async function getCache (cachePath, key) {
+  const cache = await getCacheObject(cachePath);
+  const value = cache[key];
+  if (value == null) throw new Error(`Unset cache key: ${key}`);
+  return value;
+}
+
+async function setCache (cachePath, key, value) {
+  const cache = await getCacheObject(cachePath)
+  cache[key] = value;
+  writeCacheObject(cachePath, cache);
+}
+
+function withCache (cachePath, name, operation, args, callback) {
+  getCache(cachePath, name)
+    .catch(async () => {
+      const result = await promised(operation, ...args);
+      await setCache(cachePath, name, result);
+      return result;
+    })
+    .then(
+      result => callback(null, result),
+      error => callback(error)
+    );
+}
+
+async function clearCache (cachePath) {
+  try {
+    clearTimeout(cacheWriteTimer);
+    await fs.remove(cachePath);
+  }
+  catch (error) {
+    // Failure is OK, but log it.
+    console.error('Error clearing cache:', error);
+  }
 }
 
 function delayPromise (timeout) {
