@@ -795,7 +795,7 @@ function getAllResults (apiPath, qs) {
   return getResponse(apiPath, qs)
     .then(body => {
       if (args['--debug']) {
-        console.log(`Got ${getChunk(apiPath)} of ${getChunk(body.links.last)}`);
+        console.log(`Got ${getChunk(apiPath)}`);
       }
 
       // Concatenate the next page onto the end of this one if there is one.
