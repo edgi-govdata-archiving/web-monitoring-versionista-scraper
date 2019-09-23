@@ -1,0 +1,53 @@
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: circleci/node:10.16
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - dependency-cache-1-{{ checksum "yarn.lock" }}
+            - dependency-cache-1-
+      - run:
+          name: Dependencies
+          command: yarn install --frozen-lockfile
+      - save_cache:
+          key: dependency-cache-1-{{ checksum "yarn.lock" }}
+          paths:
+            - ./node_modules
+      - run:
+          name: Scrape Versionista
+          command: |
+            # NOTE: Account login info is provided by environment vars:
+            # - VERSIONISTA_EMAIL
+            # - VERSIONISTA_PASSWORD
+            # - VERSIONISTA_NAME
+            mkdir test-run
+            bin/scrape-versionista \
+              --after 168 \
+              --output test-run/output.json \
+              --save-content \
+              --save-diffs \
+              --parallel 2 \
+              --rate 30
+            # Print nicely formatted output for inspection
+            echo "-------------- OUTPUT DATA ------------------"
+            cat test-run/output.json | jq
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build
+
+  nightly:
+    jobs:
+      - build
+    triggers:
+      - schedule:
+          cron: '0 0 * * *'
+          filters:
+             branches:
+               only:
+                 - master
