@@ -25,7 +25,7 @@ jobs:
             # - VERSIONISTA_NAME
             mkdir test-run
             bin/scrape-versionista \
-              --from 168 \
+              --after 168 \
               --output test-run/output.json \
               --save-content \
               --save-diffs \
