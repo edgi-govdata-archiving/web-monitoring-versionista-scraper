@@ -151,7 +151,14 @@ function logError (error) {
 
   errorStream.write(error.stack || error.message || error.toString());
   errorStream.write('\n');
-  sentryErrors.captureException(error);
+
+  // Also send it along to the error tracking service.
+  if (typeof error == 'string') {
+    sentryErrors.captureMessage(error);
+  }
+  else {
+    sentryErrors.captureException(error);
+  }
 }
 
 function flushErrors () {
