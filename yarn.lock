@@ -35,10 +35,10 @@
   resolved "https://registry.yarnpkg.com/@google-cloud/promisify/-/promisify-1.0.2.tgz#e581aa79ff71fb6074acc1cc59e3d81bf84ce07b"
   integrity sha512-7WfV4R/3YV5T30WRZW0lqmvZy9hE2/p9MvpI34WuKa2Wz62mLu5XplGTFEMK6uTbJCLWUxTcZ4J4IyClKucE5g==
 
-"@google-cloud/storage@^3.3.1":
-  version "3.3.1"
-  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-3.3.1.tgz#37fce6a4cc029556e71fa0b9bcdb9032241a892b"
-  integrity sha512-+OoVaJbETDh9cyDoRGe1MJE2Rhrd6JXjSP7GVpdxCUkwYw8pLll/Oz+84JEB82GebQlxG+GVHGcKYTVcSobB5g==
+"@google-cloud/storage@^4.0.1":
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/@google-cloud/storage/-/storage-4.0.1.tgz#d0338fd728a4f4639e3245b66ceab8999b6319d0"
+  integrity sha512-9qwdz2X/HNRxOAVmRsXnNgQdtI9PpLFEMRHDG+26a8gTFg+9842tgJ+oRBkPVY5c3NmOTVtGn8mszvxyWLguOg==
   dependencies:
     "@google-cloud/common" "^2.1.1"
     "@google-cloud/paginator" "^2.0.0"
@@ -51,7 +51,7 @@
     extend "^3.0.2"
     gaxios "^2.0.1"
     gcs-resumable-upload "^2.2.4"
-    hash-stream-validation "^0.2.1"
+    hash-stream-validation "^0.2.2"
     mime "^2.2.0"
     mime-types "^2.0.8"
     onetime "^5.1.0"
@@ -669,9 +669,10 @@ har-validator@~5.1.0:
     ajv "^5.3.0"
     har-schema "^2.0.0"
 
-hash-stream-validation@^0.2.1:
-  version "0.2.1"
-  resolved "https://registry.yarnpkg.com/hash-stream-validation/-/hash-stream-validation-0.2.1.tgz#ecc9b997b218be5bb31298628bb807869b73dcd1"
+hash-stream-validation@^0.2.2:
+  version "0.2.2"
+  resolved "https://registry.yarnpkg.com/hash-stream-validation/-/hash-stream-validation-0.2.2.tgz#6b34c4fce5e9fce265f1d3380900049d92a10090"
+  integrity sha512-cMlva5CxWZOrlS/cY0C+9qAzesn5srhFA8IT1VPiHc9bWWBLkJfEUIZr7MWoi89oOOGmpg8ymchaOjiArsGu5A==
   dependencies:
     through2 "^2.0.0"
 
