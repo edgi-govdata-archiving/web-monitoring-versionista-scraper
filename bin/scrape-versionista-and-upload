@@ -9,6 +9,10 @@ const mkdirp = require('mkdirp');
 const neodoc = require('neodoc');
 
 const args = neodoc.run(`
+Runs scrape-versionista, uploads the resulting files to Amazon S3 and Google
+Cloud Storage, and finally imports them into an instance of web-monitoring-db
+(https://github.com/edgi-govdata-archiving/web-monitoring-db/).
+
 Usage: scrape-versionista-and-upload [options] --output DIRECTORY
 
 Options:

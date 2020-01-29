@@ -8,6 +8,8 @@ const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
 
 const args = neodoc.run(`
+Run scrape-versionista, then compress the results and e-mail them somewhere.
+
 Usage: scrape-versionista-and-email [options]
 
 Options:
