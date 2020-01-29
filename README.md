@@ -100,7 +100,7 @@ $ scrape-versionista --after 0.5
 
 ## Other Scripts
 
-The `bin` directory actually contains several other scripts besides `scrape-versionista`. They’re all closely related and perform helper tasks that are important in EDGI’s workflow around Versionista.
+The `bin` directory contains several other scripts besides `scrape-versionista`. They’re all closely related and perform helper tasks that are important in EDGI’s workflow around Versionista.
 
 - `scrape-versionista-and-email` runs `scrape-versionista`, then compresses the results into a single `.tar.gz` archive and e-mails them to a specified address.
 

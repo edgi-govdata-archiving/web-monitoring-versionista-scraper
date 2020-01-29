@@ -14,7 +14,6 @@ const spawn = require('child_process').spawn;
 const stream = require('stream');
 
 const args = neodoc.run(`
-Query our database for updated pages/versions and send an e-mail with details.
 Query a web-monitoring-db instance for pages that were updated with new
 versions during a given time frame and e-mail a compressed \`.tar.gz\` archive
 of the results to a specified address.
