@@ -17,7 +17,7 @@ const args = neodoc.run(`
 Query a web-monitoring-db instance for pages that were updated with new
 versions during a given time frame and e-mail a compressed \`.tar.gz\` archive
 of the results to a specified address.
-Results CSV files -- one per combination of tags specified with --group-by.
+Results are CSV files -- one per combination of tags specified with --group-by.
 
 Usage: query-db-and-email [--group-by TAG]... [options]
 
