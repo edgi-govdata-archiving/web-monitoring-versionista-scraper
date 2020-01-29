@@ -71,8 +71,6 @@ $ scrape-versionista --help
 
 - `--group-by-site` If set, a separate output file will be generated for each site. Files are placed in the same directory as `--output`, so the actual filename specified in `--output` will never be created.
 
-- `get-versionista-metadata` and `get-versionista-page-chunk` are for advanced usage loading extremely large amounts of data from Versionista. See [`backfilling-data.md`](./backfilling-data.md) for usage instructions.
-
 
 ## Examples
 
@@ -121,6 +119,8 @@ The `bin` directory actually contains several other scripts besides `scrape-vers
 - `reload-versionista-archives` **(deprecated)** was used to remediate errors downloading the archived HTTP response bodies for versions. It reads metadata about pages and versions from a JSON-stream-formatted file output by `scrape-versionista` and re-downloads the raw HTTP response bodies for all versions of a list of pages.
 
     **NOTE: this script is deprecated; we now use different methods to acquire archived versions and it should no longer be necessary in addition to `scrape-versionista`.**
+
+- `get-versionista-metadata` and `get-versionista-page-chunk` are for advanced usage loading extremely large amounts of data from Versionista. See [`backfilling-data.md`](./backfilling-data.md) for usage instructions.
 
 
 ## Deployment
