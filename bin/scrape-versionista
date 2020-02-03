@@ -273,7 +273,7 @@ function archiveVersionDiff (version, diffType) {
             `diff-${version.versionId}${fileSuffix}.html`
           );
           version[fieldName].path = getCleanedPath(fullDiffPath);
-          return fs.ensureDir(pagePath)
+          return fs.promises.mkdir(pagePath, {recursive: true})
             .then(() => fs.writeFile(fullDiffPath, diff.content))
             .then(() => version);
         }
@@ -303,7 +303,7 @@ function archivePageVersions (page, versions) {
   const pageDirectory = `${siteId}-${page.id}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
 
-  return fs.ensureDir(pagePath)
+  return fs.promises.mkdir(pagePath, {recursive: true})
     .then(() => {
       const downloads = downloadableVersions.map(version => {
         return scraper.getVersionRawContent(version.url)
