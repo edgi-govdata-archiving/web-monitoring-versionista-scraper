@@ -4,7 +4,7 @@
 const {compareMany, ascend, descend, getDeep} = require('../lib/tools');
 const flatten = require('../lib/flatten');
 const formatCsv = require('../lib/formatters/csv');
-const fs = require('fs-promise');
+const fs = require('fs').promises;
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
 const path = require('path');
@@ -127,7 +127,7 @@ class SetMap extends Map {
 }
 
 let removeOutput = true;
-fs.ensureDir(outputDirectory)
+fs.mkdir(outputDirectory, {recursive: true})
   .then(() => getGroupUpdates())
   .then(result => writeCsvsForGroups(result.pagesByGroup).then(() => result))
   .then(result => {
@@ -697,7 +697,7 @@ function getWithRetries(url, options, retries, callback) {
 //   }
 //   catch (error) {
 //     const result = await operation(args);
-//     await fs.ensureDir(basePath);
+//     await fs.mkdir(basePath, {recursive: true});
 //     await fs.writeFile(filePath, result.body, {encoding: 'utf8'});
 //     return result;
 //   }
@@ -737,7 +737,7 @@ async function writeCacheObject (cachePath, cache, now = false) {
       // the write finishes and the next instruction. Better to schedule an
       // extra write than to miss a write!
       cacheWriteTimer = -1;
-      await fs.ensureDir(path.resolve(cachePath, '..'));
+      await fs.mkdir(path.resolve(cachePath, '..'), {recursive: true});
       await fs.writeFile(cachePath, JSON.stringify(cache), {encoding: 'utf8'});
     }
     catch (error) {
@@ -781,7 +781,7 @@ function withCache (cachePath, name, operation, args, callback) {
 async function clearCache (cachePath) {
   try {
     clearTimeout(cacheWriteTimer);
-    await fs.remove(cachePath);
+    await fs.unlink(cachePath);
   }
   catch (error) {
     // Failure is OK, but log it.

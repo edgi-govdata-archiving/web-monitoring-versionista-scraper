@@ -2,9 +2,7 @@
 'use strict';
 
 const path = require('path');
-const stream = require('stream');
-const fs = require('fs-promise');
-const mkdirp = require('mkdirp');
+const fs = require('fs');
 const neodoc = require('neodoc');
 const Versionista = require('..');
 const flatten = require('../lib/flatten');
@@ -120,16 +118,12 @@ if (args['--output']) {
 let directoryIsReady = false;
 function writeFile (name, content, encoding = 'utf8') {
   const filePath = path.join(baseDirectory, name);
-  const writeIt = () => fs.writeFile(filePath, content, encoding);
+  const writeIt = () => fs.promises.writeFile(filePath, content, encoding);
 
   if (!directoryIsReady) {
-    return new Promise((resolve, reject) => {
-      mkdirp(baseDirectory, (error, created) => {
-        if (error) return reject(error);
-        directoryIsReady = true;
-        resolve(created);
-      });
-    }).then(writeIt)
+    return fs.promises.mkdir(baseDirectory, {recursive: true})
+      .then(() => { directoryIsReady = true; })
+      .then(writeIt);
   }
 
   return writeIt();
@@ -252,8 +246,8 @@ function archiveVersionDiff (version, diffType) {
             `diff-${version.versionId}${fileSuffix}.html`
           );
           version[fieldName].path = getCleanedPath(fullDiffPath);
-          return fs.ensureDir(pagePath)
-            .then(() => fs.writeFile(fullDiffPath, diff.content))
+          return fs.promises.mkdir(pagePath, {recursive: true})
+            .then(() => fs.promises.writeFile(fullDiffPath, diff.content))
             .then(() => version);
         }
       }
@@ -282,7 +276,7 @@ function archivePageVersions (page, versions) {
   const pageDirectory = `${siteId}-${page.id}`;
   const pagePath = path.join(baseDirectory, pageDirectory);
 
-  return fs.ensureDir(pagePath)
+  return fs.promises.mkdir(pagePath, {recursive: true})
     .then(() => {
       const downloads = downloadableVersions.map(version => {
         return scraper.getVersionRawContent(version.url)
@@ -296,7 +290,7 @@ function archivePageVersions (page, versions) {
             version.headers = content.headers;
             version.contentType = content.headers['content-type'];
 
-            return fs.writeFile(outputPath, content.body);
+            return fs.promises.writeFile(outputPath, content.body);
           })
           .catch(logError);
       });
@@ -356,7 +350,7 @@ function archivePageVersions (page, versions) {
 
 
 
-// let pages = fs.readFile(args['--candidate-pages'], 'utf8')
+// let pages = fs.promises.readFile(args['--candidate-pages'], 'utf8')
 //   .then(data => JSON.parse(data))
 //   .then(pages => {
 //     const startIndex = Number(args['--start-from']);
@@ -365,7 +359,7 @@ function archivePageVersions (page, versions) {
 
 
 
-const sites = fs.readFile(args['--candidate-pages'], 'utf8')
+const sites = fs.promises.readFile(args['--candidate-pages'], 'utf8')
   .then(data => JSON.parse(data));
 
 const pages = sites

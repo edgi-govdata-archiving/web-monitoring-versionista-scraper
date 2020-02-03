@@ -3,7 +3,7 @@
 
 const path = require('path');
 const spawn = require('child_process').spawn;
-const fs = require('fs-promise');
+const fs = require('fs').promises;
 const neodoc = require('neodoc');
 const nodemailer = require('nodemailer');
 
@@ -80,7 +80,7 @@ function scrapeAccount() {
       return result;
     }, []);
 
-  return fs.ensureDir(directory)
+  return fs.mkdir(directory, {recursive: true})
     .then(() => run(
       path.join(scriptsPath, 'scrape-versionista'),
       [
