@@ -3,9 +3,9 @@
 
 const sentryErrors = require('../lib/sentry-errors').setup();
 
+const fs = require('fs');
 const path = require('path');
 const spawn = require('child_process').spawn;
-const mkdirp = require('mkdirp');
 const neodoc = require('neodoc');
 
 const args = neodoc.run(`
@@ -68,7 +68,7 @@ function archiveAndUpload (email, password, callback) {
   const account = args['--account-name'] || email.match(/^(.+)@/)[1];
   const mainDirectory = path.join(outputDirectory, account);
 
-  mkdirp(mainDirectory, error => {
+  fs.mkdir(mainDirectory, {recursive: true}, error => {
     if (error) {
       return callback(error);
     }
