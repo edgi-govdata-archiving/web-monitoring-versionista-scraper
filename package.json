@@ -21,7 +21,7 @@
     "parallel-transform": "^1.2.0",
     "pump": "^3.0.0",
     "raven": "^2.6.4",
-    "request": "^2.88.0",
+    "request": "^2.88.2",
     "split": "^1.0.1"
   }
 }
