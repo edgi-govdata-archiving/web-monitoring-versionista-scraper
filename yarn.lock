@@ -366,10 +366,10 @@ cssstyle@^2.2.0:
   dependencies:
     cssom "~0.3.6"
 
-csv-parse@^4.8.5:
-  version "4.8.5"
-  resolved "https://registry.yarnpkg.com/csv-parse/-/csv-parse-4.8.5.tgz#32e92a0e0acedab141bd5c5a3ad6fc3316f2c72d"
-  integrity sha512-rpsLmlLWJZifmLzZEVGbZ9phWnJyi+cCbCGYr4vX2NaHFtgbmQPFk+WmMkmMkQXgsIUn6CgnK9cTuUAfFjoXbA==
+csv-parse@^4.8.7:
+  version "4.8.7"
+  resolved "https://registry.yarnpkg.com/csv-parse/-/csv-parse-4.8.7.tgz#8c93994b6460e3b4f4b8e816e9e168ec870391df"
+  integrity sha512-Kgip6VA+sUvd1lYqZ1n8PpJdv2BKnoYV/YP0by7LTMgNSs2FD3Y16fKyMdQcLfcBgSLnjkix/3BNnVxkw5NmpQ==
 
 cyclist@^1.0.1:
   version "1.0.1"
