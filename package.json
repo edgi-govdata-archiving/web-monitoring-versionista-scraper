@@ -15,7 +15,7 @@
     "csv-parse": "^4.8.8",
     "jsdom": "^16.2.2",
     "klaw": "^3.0.0",
-    "mime-types": "^2.1.26",
+    "mime-types": "^2.1.27",
     "neodoc": "^2.0.2",
     "nodemailer": "^6.4.6",
     "parallel-transform": "^1.2.0",
