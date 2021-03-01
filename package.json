@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@google-cloud/storage": "^5.7.3",
-    "@sentry/node": "6.0.4",
+    "@sentry/node": "6.2.0",
     "aws-sdk": "^2.834.0",
     "csv-parse": "^4.15.1",
     "jsdom": "^16.4.0",
