@@ -13,7 +13,7 @@
     "@sentry/node": "6.3.5",
     "aws-sdk": "^2.897.0",
     "csv-parse": "^4.15.3",
-    "jsdom": "^16.5.2",
+    "jsdom": "^16.5.3",
     "klaw": "^3.0.0",
     "mime-types": "^2.1.30",
     "neodoc": "^2.0.2",
