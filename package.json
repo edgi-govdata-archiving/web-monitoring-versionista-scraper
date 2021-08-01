@@ -17,7 +17,7 @@
     "klaw": "^3.0.0",
     "mime-types": "^2.1.31",
     "neodoc": "^2.0.2",
-    "nodemailer": "^6.6.2",
+    "nodemailer": "^6.6.3",
     "parallel-transform": "^1.2.0",
     "pump": "^3.0.0",
     "raven": "^2.6.4",
