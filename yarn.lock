@@ -313,9 +313,9 @@ cssstyle@^2.3.0:
   dependencies:
     cssom "~0.3.6"
 
-csv-parse@^4.16.2:
-  version "4.16.2"
-  resolved "https://registry.npmjs.org/csv-parse/-/csv-parse-4.16.2.tgz"
+csv-parse@^4.16.3:
+  version "4.16.3"
+  resolved "https://registry.yarnpkg.com/csv-parse/-/csv-parse-4.16.3.tgz#7ca624d517212ebc520a36873c3478fa66efbaf7"
 
 cyclist@^1.0.1:
   version "1.0.1"
