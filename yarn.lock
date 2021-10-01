@@ -190,9 +190,9 @@ asynckit@^0.4.0:
   version "0.4.0"
   resolved "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz"
 
-aws-sdk@^2.980.0:
-  version "2.980.0"
-  resolved "https://registry.npmjs.org/aws-sdk/-/aws-sdk-2.980.0.tgz"
+aws-sdk@^2.998.0:
+  version "2.998.0"
+  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.998.0.tgz#e37d98a522c4b6cfbfc41d85bd99fa61b5f90d20"
   dependencies:
     buffer "4.9.2"
     events "1.1.1"
