@@ -670,9 +670,9 @@ jsbn@~0.1.0:
   version "0.1.1"
   resolved "https://registry.npmjs.org/jsbn/-/jsbn-0.1.1.tgz"
 
-jsdom@^18.0.1:
-  version "18.0.1"
-  resolved "https://registry.yarnpkg.com/jsdom/-/jsdom-18.0.1.tgz#7317c91be425f31ff25814ad427eed8a2a310b61"
+jsdom@^18.1.1:
+  version "18.1.1"
+  resolved "https://registry.yarnpkg.com/jsdom/-/jsdom-18.1.1.tgz#15ec896f5ab7df9669a62375606f47c8c09551aa"
   dependencies:
     abab "^2.0.5"
     acorn "^8.5.0"
