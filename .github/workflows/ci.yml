@@ -29,8 +29,11 @@ jobs:
           yarn install --frozen-lockfile
 
       - name: Scrape Versionista
+        env:
+          VERSIONISTA_EMAIL: ${{ secrets.VERSIONISTA_EMAIL }}
+          VERSIONISTA_PASSWORD: ${{ secrets.VERSIONISTA_PASSWORD }}
+          VERSIONISTA_NAME: ${{ secrets.VERSIONISTA_NAME }}
         run: |
-          echo "VERSIONISTA_EMAIL=${VERSIONISTA_EMAIL}"
           # NOTE: Account login info is provided by environment vars:
           # - VERSIONISTA_EMAIL
           # - VERSIONISTA_PASSWORD
