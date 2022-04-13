@@ -1,0 +1,51 @@
+on:
+  pull_request: {}
+  push:
+    branches:
+      - main
+  schedule:
+    # Run at midnight every day -- we want an alert about failed jobs if
+    # Versionista changes in a way that causes the scraper to break.
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+name: Continuous Integration
+
+jobs:
+  scrape:
+    name: Scrape Test Account
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 14
+          cache: yarn
+
+      - name: Install dependencies
+        run: |
+          yarn install --frozen-lockfile
+
+      - name: Scrape Versionista
+        env:
+          VERSIONISTA_EMAIL: ${{ secrets.VERSIONISTA_EMAIL }}
+          VERSIONISTA_PASSWORD: ${{ secrets.VERSIONISTA_PASSWORD }}
+          VERSIONISTA_NAME: ${{ secrets.VERSIONISTA_NAME }}
+        run: |
+          # NOTE: Account login info is provided by environment vars:
+          # - VERSIONISTA_EMAIL
+          # - VERSIONISTA_PASSWORD
+          # - VERSIONISTA_NAME
+          mkdir test-run
+          bin/scrape-versionista \
+            --after 168 \
+            --output test-run/output.json \
+            --save-content \
+            --save-diffs \
+            --parallel 2 \
+            --rate 30
+          # Print nicely formatted output for inspection
+          echo "-------------- OUTPUT DATA ------------------"
+          cat test-run/output.json | jq
