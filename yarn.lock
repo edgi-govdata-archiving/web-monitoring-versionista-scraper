@@ -193,10 +193,10 @@ asynckit@^0.4.0:
   version "0.4.0"
   resolved "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz"
 
-aws-sdk@^2.1106.0:
-  version "2.1106.0"
-  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1106.0.tgz#5c536f57b484af56ca2e0b15fcf2e7d5846ffbd8"
-  integrity sha512-3dr0TTR2LI70ST8fa4IgXHpWdH4yv7FLnt9YEndwFQ8ar2EMCMpMU67wwCGBA72GUi0aOg4+lsLjGmCvIq3jug==
+aws-sdk@^2.1126.0:
+  version "2.1126.0"
+  resolved "https://registry.yarnpkg.com/aws-sdk/-/aws-sdk-2.1126.0.tgz#52e42358bdcba0043b6ff6b8e17d5aaacd9a93be"
+  integrity sha512-8yeeYFXOwbJIUHIJZlrcgWGvLPi+yayKc2h/+hnNLdnp/u+LUuJqMDH/19fogAai8PANSqI7N9fGkMIBZDrThQ==
   dependencies:
     buffer "4.9.2"
     events "1.1.1"
