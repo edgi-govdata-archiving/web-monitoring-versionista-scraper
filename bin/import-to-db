@@ -28,7 +28,7 @@ Options:
                    [default: https://api.monitoring.envirodatagov.org/]
                    [env: WEB_MONITORING_URL]
   --bucket BUCKET  Amazon S3 bucket that is hosting raw version data.
-                   [default: edgi-versionista-archive]
+                   [default: edgi-wm-versionista]
                    [env: AWS_S3_BUCKET]
   --chunk SIZE     Send versions in chunks of this size. [default: 1000]
   --update UPDATE  Set the update behavior, which determines how versions that
