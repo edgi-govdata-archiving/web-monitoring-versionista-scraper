@@ -4,6 +4,7 @@ node_modules/*
 tmp/*
 scratch.*
 .vscode
+.node-version
 
 # Google cloud keys
 *-key.json
