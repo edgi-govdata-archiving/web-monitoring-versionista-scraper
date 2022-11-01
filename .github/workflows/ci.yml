@@ -15,6 +15,9 @@ jobs:
   scrape:
     name: Scrape Test Account
     runs-on: ubuntu-latest
+    # Prevent multiple jobs talking to Versionista at the same time; they'll
+    # fail to log in.
+    concurrency: versionista_integration
     steps:
       - uses: actions/checkout@v3
 
