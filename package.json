@@ -9,7 +9,7 @@
     "scrape-versionista": "./bin/scrape-versionista"
   },
   "dependencies": {
-    "@google-cloud/storage": "^6.6.0",
+    "@google-cloud/storage": "^6.7.0",
     "@sentry/node": "7.17.3",
     "aws-sdk": "^2.1265.0",
     "csv-parse": "^5.3.1",
