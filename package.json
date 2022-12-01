@@ -12,7 +12,7 @@
     "@google-cloud/storage": "^6.7.0",
     "@sentry/node": "7.17.3",
     "aws-sdk": "^2.1265.0",
-    "csv-parse": "^5.3.1",
+    "csv-parse": "^5.3.3",
     "jsdom": "^20.0.3",
     "klaw": "^4.0.1",
     "mime-types": "^2.1.35",
