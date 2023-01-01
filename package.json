@@ -14,7 +14,7 @@
     "aws-sdk": "^2.1265.0",
     "csv-parse": "^5.3.3",
     "jsdom": "^20.0.3",
-    "klaw": "^4.0.1",
+    "klaw": "^4.1.0",
     "mime-types": "^2.1.35",
     "neodoc": "^2.0.2",
     "nodemailer": "^6.8.0",
