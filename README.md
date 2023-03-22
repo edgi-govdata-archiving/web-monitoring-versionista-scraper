@@ -1,5 +1,7 @@
 [![Code of Conduct](https://img.shields.io/badge/%E2%9D%A4-code%20of%20conduct-blue.svg?style=flat)](https://github.com/edgi-govdata-archiving/overview/blob/master/CONDUCT.md) &nbsp;[![Project Status Board](https://img.shields.io/badge/✔-Project%20Status%20Board-green.svg?style=flat)](https://github.com/orgs/edgi-govdata-archiving/projects/4)
 
+⚠️ **This project is not actively maintained.** ⚠️ EDGI no longer uses it for any ongoing work, and it depends on some no-longer-supported tools. Please let us know if you are using it to manage your data from Versionista.
+
 # web-monitoring-versionista-scraper
 
 This is a version of [versionista-outputter](https://github.com/edgi-govdata-archiving/versionista-outputter) that has been rewritten in Node.js and JSDom.
