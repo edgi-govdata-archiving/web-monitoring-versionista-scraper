@@ -11,7 +11,7 @@
   "dependencies": {
     "@google-cloud/storage": "^6.8.0",
     "@sentry/node": "7.23.0",
-    "aws-sdk": "^2.1265.0",
+    "aws-sdk": "^2.1354.0",
     "csv-parse": "^5.3.3",
     "jsdom": "^20.0.3",
     "klaw": "^4.0.1",
